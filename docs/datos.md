@@ -137,7 +137,7 @@ La columna "dirección esperada" es una lectura del equipo, no viene en los dato
 |---|---|---|---|
 | `id_box` | texto | `BOX-01` … `BOX-20` | |
 | `fecha` | fecha | 2026-04-14 … 2026-10-13, días hábiles | |
-| `especialidad` | texto | 7 especialidades | Un box cambia de especialidad según el día |
+| `especialidad` | texto | 7 especialidades | Cada box atiende **siempre la misma** especialidad (Cardiología y Traumatología tienen 1 box; Broncopulmonar, 6) |
 | `bloque_inicio` / `bloque_fin` | hora | 08:30 / 13:30 | Un bloque de 5 h por box y día |
 | `capacidad_cupos` | entero | 8, 10, 12 | |
 | `cupos_usados` | entero | 0–12 | ≤ capacidad. Ocupación global ≈ 74 % |
