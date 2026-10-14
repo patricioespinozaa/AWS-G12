@@ -38,8 +38,10 @@ Consecuencias para el código:
 | `docs/contexto.md` | El desafío, el problema, la ruta del paciente y el caso de don Manuel |
 | `docs/datos.md` | Esquema del dataset entregado por el HLF (sintético, 7 especialidades, agenda de box) y advertencias de calidad |
 | `docs/casos-ejemplo.md` | Seis pacientes de referencia, uno por patrón de evolución, para tests y demo |
+| `docs/eda.md` | Hallazgos del análisis exploratorio (notebooks en `notebooks/`) |
 | `docs/kpis.md` | Métricas de éxito y cómo calcularlas |
 | `docs/enfoque.md` | Propuesta de arquitectura y del puntaje de priorización |
+| `docs/arquitectura.md` | Diagramas: linaje de variables, modelo de datos y trazabilidad, niveles de priorización, flujo y vistas |
 | `docs/datasets-externos.md` | Datasets públicos de síntomas, enfermedades y severidad |
 | `docs/glosario.md` | Siglas y términos del sistema de salud chileno |
 
@@ -54,3 +56,5 @@ Leer `docs/contexto.md` y `docs/datos.md` antes de escribir código que toque da
 ## Estado
 
 Stack, comandos de instalación y de ejecución: **por definir**. Actualizar esta sección cuando existan.
+
+- EDA: notebooks en `notebooks/` (Python 3.11, pandas, matplotlib, seaborn, scipy). `notebooks/carga.py` carga el dataset desde `data/dataset_hlf_ambulatorio/dataset_hlf_ambulatorio/`.

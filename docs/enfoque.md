@@ -92,7 +92,27 @@ puntaje(t) = base(prioridad_inicial)
 - Pasar el puntaje a **alta / media / baja** con umbrales fijos y versionados.
 
 **Reglas duras sugeridas** (alerta inmediata, sin importar el puntaje):
-- Hospitalización en UCI o urgencia con descompensación grave en los últimos 30 días → proponer **alta** y alertar.
+- Cualquier evento grave en los últimos 30 días (urgencia ESI 2, descompensación grave, hospitalización, ingreso UCI) → proponer **alta** y alertar.
+
+Umbrales iniciales del puntaje: alta ≥ 20, media 10–19,9, baja < 10. El árbol de decisión completo está en `docs/arquitectura.md`.
+
+### ⚠️ Pendiente: riesgo basal según el diagnóstico
+
+**Problema.** Dos personas pueden tener un **riesgo basal distinto por su diagnóstico** y aun así quedar con el **mismo nivel de prioridad**. Por ejemplo, una angina de pecho (I20) o una insuficiencia cardíaca (I50) no conllevan el mismo riesgo de daño durante la espera que un reflujo (K21) o un lumbago (M54), aunque las cuatro solicitudes figuren como "media". Hay que resolverlo para que la prioridad sea más justa.
+
+**Evidencia en los datos.** El EDA muestra que la prioridad inicial no se asocia con la especialidad ni con el diagnóstico (χ² p = 0,90). Por ejemplo, solo el 7,9 % de las anginas (I20) tiene prioridad alta, frente al 28,6 % de las obesidades (E66). El borrador actual del puntaje tampoco lo corrige: `base_prioridad` sale solo de `prioridad_inicial` y no hay ningún término que dependa del diagnóstico.
+
+**Por qué importa.**
+- Con tres niveles, dentro de "media" conviven pacientes con riesgos muy distintos, y el orden de atención entre ellos queda al azar.
+- Un mismo evento pesa distinto según la condición de fondo: una urgencia en un paciente con insuficiencia cardíaca es más preocupante que en uno con lumbago.
+
+**Opciones a evaluar con el equipo clínico:**
+1. **Variable `riesgo_basal_dx`** por código CIE-10 (17 diagnósticos en el dataset). Sería una tabla de puntos definida y validada con los clínicos, por ejemplo según el riesgo de daño irreversible o de muerte durante la espera. Sumaría al puntaje como un factor más, con su aporte visible en la explicación.
+2. **Ordenar dentro de cada nivel** por el puntaje continuo. El nivel (alta, media, baja) se mantiene, pero la bandeja muestra primero a quien tiene más riesgo dentro del mismo nivel.
+3. **Ajustar el peso de los eventos según el diagnóstico**, usando el término `relevancia(e, dx)` del borrador original: el mismo evento aporta más si agrava la condición de base.
+4. **Revisar la escala de niveles**: evaluar si tres niveles bastan o si hacen falta subniveles, en coherencia con la escala que usa hoy el HLF.
+
+Cualquiera de las opciones debe ser **explicable**: el factor "riesgo basal por diagnóstico" debe aparecer en la explicación con su aporte, y los puntos por diagnóstico deben quedar versionados en `version_reglas`.
 - Paciente fallecido → excluir.
 
 **Bajar la prioridad** solo con evidencia de mejora (eventos de mejora y mediciones normales sostenidas), nunca solo por falta de datos. Un paciente sin registros conserva su prioridad inicial.
