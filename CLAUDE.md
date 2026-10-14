@@ -36,7 +36,8 @@ Consecuencias para el código:
 | Archivo | Contenido |
 |---|---|
 | `docs/contexto.md` | El desafío, el problema, la ruta del paciente y el caso de don Manuel |
-| `docs/datos.md` | Esquema esperado de los datos entregados por el HLF |
+| `docs/datos.md` | Esquema del dataset entregado por el HLF (sintético, 7 especialidades, agenda de box) y advertencias de calidad |
+| `docs/casos-ejemplo.md` | Seis pacientes de referencia, uno por patrón de evolución, para tests y demo |
 | `docs/kpis.md` | Métricas de éxito y cómo calcularlas |
 | `docs/enfoque.md` | Propuesta de arquitectura y del puntaje de priorización |
 | `docs/datasets-externos.md` | Datasets públicos de síntomas, enfermedades y severidad |
