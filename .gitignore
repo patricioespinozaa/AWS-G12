@@ -1,0 +1,19 @@
+# Datos del hospital: nunca versionar
+data/raw/
+data/processed/
+
+data/complementaria
+data/dataset_hlf_ambulatorio
+
+*.xlsx
+*.csv
+!data/synthetic/**/*.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Notebooks
+.ipynb_checkpoints/
