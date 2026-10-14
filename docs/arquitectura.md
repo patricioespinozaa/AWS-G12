@@ -279,7 +279,7 @@ flowchart TD
     B -- "sí" --> X["EXCLUIDA<br/>sale de la bandeja, sin nuevas citas"]
     B -- "no" --> C{"Regla dura:<br/>¿evento grave en los últimos 30 días?<br/>urgencia ESI 2, descompensación grave,<br/>hospitalización, ingreso UCI"}
     C -- "sí" --> H["ALTA + ALERTA<br/>revisión clínica prioritaria"]
-    C -- "no" --> D["Puntaje =<br/>base_prioridad + factor_edad + factor_espera<br/>+ aporte_eventos + aporte_mediciones"]
+    C -- "no" --> D["Puntaje de nivel =<br/>base_prioridad + aporte_eventos + aporte_mediciones<br/>+ patrones + ajuste por riesgo basal"]
     D --> E{"Puntaje"}
     E -- "≥ 20" --> AL["ALTA"]
     E -- "10 a 19,9" --> ME["MEDIA"]
@@ -292,10 +292,11 @@ flowchart TD
     Z --> V["El equipo clínico acepta, ajusta o rechaza"]
 ```
 
-- **Umbrales iniciales:** alta ≥ 20, media 10–19,9, baja < 10. Con `base_prioridad` alta = 20 y media = 10, un paciente sin señales conserva su nivel. Los umbrales se versionan en `version_reglas` y se calibran con el equipo clínico.
+- **Umbrales iniciales:** alta ≥ 20, media 10–19,9, baja < 10, aplicados al **puntaje de nivel**. Con `base_prioridad` alta = 20 y media = 10, un paciente sin señales conserva su nivel. Los umbrales se versionan en `version_reglas` y se calibran con el equipo clínico.
+- **Dos puntajes (implementado en el MVP, `reglas-v0.1`):** el *puntaje de nivel* decide el nivel y solo incluye la base y las señales clínicas. El *puntaje de orden* le suma el contexto (riesgo basal, edad, espera) y ordena dentro del nivel. Así el contexto nunca cambia el nivel por sí solo, pero desempata. Ver `docs/mvp.md`.
 - **Bajar de nivel** exige evidencia de mejora (`n_mejora_90d > 0` o mediciones normales sostenidas). Un paciente sin registros nunca baja.
 - **Prioridad vigente** = la última `prioridad_final` aceptada por el equipo clínico o, si no hay ninguna, `prioridad_inicial`. La propuesta se compara contra ella para marcar `cambio` (sube, baja, igual).
-- **⚠️ Pendiente: riesgo basal por diagnóstico.** Hoy dos pacientes con diagnósticos de riesgo muy distinto (por ejemplo I50 insuficiencia cardíaca y K21 reflujo) pueden quedar en el mismo nivel, porque el puntaje no tiene un término por diagnóstico. Hay que resolverlo para mejorar la priorización. Opciones en `docs/enfoque.md`, sección "Pendiente: riesgo basal según el diagnóstico". La solución más probable es una variable `riesgo_basal_dx` en el puntaje y ordenar por puntaje continuo dentro de cada nivel.
+- **Riesgo basal por diagnóstico (abordado en el MVP, a validar con clínicos).** Dos pacientes con diagnósticos de riesgo muy distinto (por ejemplo I50 insuficiencia cardíaca y K21 reflujo) podían quedar en el mismo nivel y empatados. En `reglas-v0.1`, cada CIE-10 tiene una clase de riesgo basal (alto, medio o bajo) que (1) ajusta el peso de las señales clínicas (×1,25 alto, ×0,8 bajo) y (2) suma al puntaje de orden dentro del nivel. Ver `docs/enfoque.md`, sección "Pendiente: riesgo basal según el diagnóstico".
 - **`riesgo_no_show` no cambia el nivel.** Se muestra como una marca aparte con una acción sugerida (confirmar la cita, ofrecer otro horario).
 
 ### Ejemplo con los casos de referencia
