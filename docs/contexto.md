@@ -7,6 +7,8 @@
 
 > "La lista de espera es una foto; la salud de las personas, una película. Ayúdanos a ver quién empeora mientras espera."
 
+> **Actualización (dataset entregado):** el HLF entregó el dataset del reto *Priorización Clínica Evolutiva y Uso del Recurso Box*. Es **sintético**, cubre **7 especialidades sin oftalmología** (Broncopulmonar, Cardiología, Endocrinología, Gastroenterología, Neurología, Salud Mental, Traumatología) y suma un segundo eje: el **uso de los box** de atención (capacidad, inasistencias, sobretiempo). El problema de fondo es el mismo; el contexto de oftalmología de abajo sigue siendo la motivación original. Ver `docs/datos.md` y `docs/casos-ejemplo.md`.
+
 ## El hospital
 
 Hospital público de alta complejidad del SSMSO. Atiende a la población de La Florida y a personas derivadas desde la red, en consultas de especialidad, urgencia, hospitalización y cirugía.
@@ -37,6 +39,8 @@ El problema golpea más a quien tiene más carga de enfermedad: personas mayores
 
 Es un caso construido a partir de trayectorias frecuentes. Sirve como **caso de prueba de referencia**: el sistema debería subir su prioridad tras la primera urgencia por hiperglicemia.
 
+El dataset no trae oftalmología, así que don Manuel no aparece tal cual. Su equivalente más cercano es **PAC-HLF-00002** (angina, prioridad inicial baja, urgencia ESI 2 y luego hospitalización). Ver `docs/casos-ejemplo.md`.
+
 ## Ruta del paciente
 
 ```
@@ -61,7 +65,7 @@ Estas señales quedan registradas en el RCE y en otras fuentes, pero desconectad
 
 ## Qué se resuelve ahora y hasta dónde puede crecer
 
-**Ahora:** oftalmología del HLF, con listas separadas de consultas nuevas y de controles.
+**Ahora:** según la presentación, oftalmología del HLF con listas separadas de consultas nuevas y de controles. El dataset entregado cubre en cambio 7 especialidades, sin distinción entre consulta nueva y control, e incluye la agenda de box.
 
 | Antes | Después |
 |---|---|
