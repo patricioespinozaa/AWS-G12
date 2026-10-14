@@ -113,6 +113,8 @@ Umbrales iniciales del puntaje: alta ≥ 20, media 10–19,9, baja < 10. El árb
 4. **Revisar la escala de niveles**: evaluar si tres niveles bastan o si hacen falta subniveles, en coherencia con la escala que usa hoy el HLF.
 
 Cualquiera de las opciones debe ser **explicable**: el factor "riesgo basal por diagnóstico" debe aparecer en la explicación con su aporte, y los puntos por diagnóstico deben quedar versionados en `version_reglas`.
+
+**Estado en el MVP (`reglas-v0.1`):** se implementaron las opciones 1, 2 y 3. Cada uno de los 17 CIE-10 tiene una clase de riesgo basal (`priorizacion/reglas.py`, tabla a validar con clínicos). La clase multiplica las señales clínicas (×1,25 alto, ×0,8 bajo) y suma de 0 a 4 puntos al puntaje de orden dentro del nivel. Ambos aportes aparecen como factores en la explicación. La opción 4 (revisar la escala de niveles) queda abierta para el HLF. Ver `docs/mvp.md`.
 - Paciente fallecido → excluir.
 
 **Bajar la prioridad** solo con evidencia de mejora (eventos de mejora y mediciones normales sostenidas), nunca solo por falta de datos. Un paciente sin registros conserva su prioridad inicial.

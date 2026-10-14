@@ -42,6 +42,7 @@ Consecuencias para el código:
 | `docs/kpis.md` | Métricas de éxito y cómo calcularlas |
 | `docs/enfoque.md` | Propuesta de arquitectura y del puntaje de priorización |
 | `docs/arquitectura.md` | Diagramas: linaje de variables, modelo de datos y trazabilidad, niveles de priorización, flujo y vistas |
+| `docs/mvp.md` | El MVP: cómo correrlo, vistas, procesos de backend, puntaje implementado y mapeo a servicios AWS |
 | `docs/datasets-externos.md` | Datasets públicos de síntomas, enfermedades y severidad |
 | `docs/glosario.md` | Siglas y términos del sistema de salud chileno |
 
@@ -55,6 +56,15 @@ Leer `docs/contexto.md` y `docs/datos.md` antes de escribir código que toque da
 
 ## Estado
 
-Stack, comandos de instalación y de ejecución: **por definir**. Actualizar esta sección cuando existan.
+Stack del MVP (detalle en `docs/mvp.md`):
+- `priorizacion/`: motor de dominio en Python (pandas). Las reglas y pesos están en `priorizacion/reglas.py`; todo cambio sube `VERSION_REGLAS`.
+- `api/`: FastAPI. `web/`: React + TypeScript + Vite + Recharts.
+- Registro local en SQLite (`data/processed/priorizacion.sqlite`, ignorado por git; se regenera al iniciar la API si no existe).
 
-- EDA: notebooks en `notebooks/` (Python 3.11, pandas, matplotlib, seaborn, scipy). `notebooks/carga.py` carga el dataset desde `data/dataset_hlf_ambulatorio/dataset_hlf_ambulatorio/`.
+Comandos:
+- Instalar: `pip install -r requirements.txt` y `cd web && npm install`
+- Ejecutar: `cd web && npm run build`, luego `uvicorn api.main:app --port 8000` (sirve la app en http://127.0.0.1:8000)
+- Desarrollo: `uvicorn api.main:app --reload --port 8000` + `cd web && npm run dev` (http://localhost:5173)
+- Tests: `python -m pytest` (usa una base temporal)
+- Consolidación nocturna: `python -m priorizacion.nocturno`
+- EDA: notebooks en `notebooks/`; `notebooks/carga.py` carga el dataset desde `data/dataset_hlf_ambulatorio/dataset_hlf_ambulatorio/`.

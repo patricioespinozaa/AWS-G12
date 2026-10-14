@@ -17,3 +17,8 @@ __pycache__/
 
 # Notebooks
 .ipynb_checkpoints/
+
+# App web
+web/node_modules/
+web/dist/
+.pytest_cache/
