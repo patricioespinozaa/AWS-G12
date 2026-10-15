@@ -217,19 +217,24 @@ def descargar_csv(s3, cfg: Config, destino: Path, progreso=print) -> list[str]:
     """Baja los CSV publicados a `destino` y verifica cada uno contra el sha256 del manifiesto.
 
     Lo usa el contenedor del backend al arrancar (docker/backend/entrypoint.sh): los datos del hospital
-    nunca van dentro de la imagen. Si un archivo no coincide con el manifiesto, no se deja en disco.
+    nunca van dentro de la imagen. Primero verifica todos los archivos y solo entonces escribe: si uno no
+    coincide con el manifiesto, no queda en disco un dataset a medias.
     """
     huellas_publicadas = leer_manifiesto(s3, cfg)["csv_sha256"]
-    destino.mkdir(parents=True, exist_ok=True)
-    bajados = []
+    esperados = {t.archivo for t in TABLAS if t.archivo}
+    if faltan := esperados - set(huellas_publicadas):
+        raise ErrorCarga(f"El manifiesto no incluye {', '.join(sorted(faltan))}: vuelve a correr athena publicar")
+    verificados: dict[str, bytes] = {}
     for archivo, huella in sorted(huellas_publicadas.items()):
         cuerpo = s3.get_object(Bucket=cfg.bucket, Key=cfg.clave("csv", archivo))["Body"].read()
         if _sha256(cuerpo) != huella:
             raise ErrorCarga(f"{archivo}: el sha256 no coincide con el manifiesto publicado")
+        verificados[archivo] = cuerpo
+    destino.mkdir(parents=True, exist_ok=True)
+    for archivo, cuerpo in verificados.items():
         (destino / archivo).write_bytes(cuerpo)
-        bajados.append(archivo)
         progreso(f"  {archivo:<22} {len(cuerpo) / 1024:>8.1f} KB")
-    return bajados
+    return list(verificados)
 
 
 # -- DDL de Athena -----------------------------------------------------------------------------------
