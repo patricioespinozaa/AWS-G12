@@ -12,6 +12,7 @@ RDS PostgreSQL (base operativa):
 
 S3 + Athena (capa de consulta y análisis):
     python -m db athena publicar                 # raw a S3 (CSV + Parquet), tablas en Athena y verificación
+    python -m db athena descargar [--destino DIR]    # baja los CSV publicados y verifica su sha256 (contenedor)
     python -m db athena exportar [--desde --hasta]   # historial nocturno de RDS a S3, una partición por fecha
     python -m db athena verificar                # conteos y huérfanos en Athena contra el manifiesto
     python -m db athena consultar "SELECT …" [-p VALOR …]   # SQL de solo lectura, parametrizado
@@ -92,6 +93,10 @@ def _athena(args) -> int:
         print(f"Publicando raw en s3://{cfg.bucket}/{cfg.prefijo}/ · workgroup {cfg.workgroup}")
         return 0 if _imprimir_verificacion(athena.publicar(cfg, args.datos)) else 1
     s3, cliente = athena.clientes(cfg)
+    if args.accion == "descargar":
+        print(f"Descargando CSV de s3://{cfg.bucket}/{cfg.clave('csv')}/ a {args.destino}")
+        athena.descargar_csv(s3, cfg, args.destino)
+        return 0
     if args.accion == "exportar":
         print(f"Conectando a {conexion.describir(args.url)}")
         with conexion.conectar(args.url) as conn:
@@ -142,6 +147,8 @@ def main(argv=None) -> int:
     at_sub = at.add_subparsers(dest="accion", required=True)
     ap = at_sub.add_parser("publicar", help="Sube raw a S3, crea las tablas en Athena y verifica")
     ap.add_argument("--datos", type=Path, default=DATA_DIR)
+    ad = at_sub.add_parser("descargar", help="Baja los CSV publicados y los verifica contra el manifiesto")
+    ad.add_argument("--destino", type=Path, default=DATA_DIR)
     ae = at_sub.add_parser("exportar", help="Exporta el historial nocturno de RDS a S3")
     ae.add_argument("--desde", metavar="AAAA-MM-DD")
     ae.add_argument("--hasta", metavar="AAAA-MM-DD", help="Por defecto, la fecha de corte del reloj")
