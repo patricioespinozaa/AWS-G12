@@ -336,6 +336,46 @@ print(backtest(repo, ["2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01"], h
 pytest -q
 ```
 
+### 7.11 Interfaz web
+
+> **Advertencia:** solo para uso local con datos sintéticos; sin autenticación. El servidor escucha únicamente en `127.0.0.1`.
+
+La interfaz (`frontend/`, React + Vite) consume una API local (`servidor/`, FastAPI) que solo compone funciones existentes: motor de reglas, línea de tiempo, calidad de datos, copiloto y auditoría. Vistas: lista de espera, avisos, paciente con línea de tiempo, propuesta del copiloto con evidencia, decisión del profesional y calidad de datos. Toda consulta exige una fecha de corte. La decisión se registra en `auditoria.jsonl` y no modifica la prioridad.
+
+Instalación (una vez):
+
+```powershell
+python -m pip install -r requirements.txt
+cd frontend
+npm ci
+```
+
+Servidor (desde la raíz del repositorio):
+
+```powershell
+python -m servidor            # http://127.0.0.1:8000
+```
+
+Frontend (en otra terminal):
+
+```powershell
+cd frontend
+npm run dev                   # http://127.0.0.1:5173 (proxy /api → 127.0.0.1:8000)
+# o bien: npm run build; npm run preview  → http://127.0.0.1:4173
+```
+
+Variables del servidor (solo del entorno del proceso):
+
+| Variable | Defecto | Efecto |
+|---|---|---|
+| `COPILOTO_INFERENCIA_REAL` | sin definir | Inferencia **simulada**: no usa IA, no lee `.env` ni envía datos. Con `1`, usa la API real (`config.get_client()`) y la interfaz pide confirmación antes de cada envío. |
+| `COPILOTO_AUDITORIA_PATH` | `auditoria.jsonl` | Archivo donde se registran análisis y decisiones. |
+| `COPILOTO_PUERTO` | `8000` | Puerto del servidor. Defínalo también al iniciar Vite para que el proxy apunte al mismo puerto. |
+
+Cada propuesta indica si la inferencia fue simulada o real. Limitación: la conciliación JSON/CSV no se muestra en la interfaz (los IDs de medición de `ingesta_json.py` y `datos.py` usan hashes distintos).
+
+Pruebas de la capa HTTP (sin red, cliente simulado): `python -m pytest -q tests`.
+
 ---
 
 ## 8. Motor de reglas: cómo se calcula la prioridad

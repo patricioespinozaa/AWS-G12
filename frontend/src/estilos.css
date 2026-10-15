@@ -1,0 +1,166 @@
+:root {
+  --texto: #1a1a1a;
+  --fondo: #ffffff;
+  --suave: #f3f5f8;
+  --borde: #8a94a3;
+  --primario: #0b5394;
+  --error: #a4161a;
+  --exito: #1d5e20;
+  --aviso: #6b4b00;
+  font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--texto);
+  background: var(--fondo);
+  line-height: 1.5;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+
+:focus-visible {
+  outline: 3px solid var(--primario);
+  outline-offset: 2px;
+}
+
+a { color: var(--primario); }
+
+.saltar {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--primario);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  z-index: 10;
+}
+.saltar:focus { left: 0.5rem; }
+
+.encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: flex-end;
+  padding: 1rem 1.5rem;
+  border-bottom: 2px solid var(--borde);
+  background: var(--suave);
+}
+.titulo { flex: 1 1 32rem; }
+.producto { font-weight: 700; font-size: 1.15rem; margin: 0 0 0.5rem; }
+
+.banner-local {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--aviso);
+  background: #fff7e0;
+  color: #3d2b00;
+}
+.modo { margin: 0; font-size: 0.95rem; }
+.modo-real { color: var(--error); font-weight: 700; }
+
+.selector-corte { display: flex; flex-direction: column; gap: 0.25rem; max-width: 22rem; }
+.selector-corte label { font-weight: 700; }
+.selector-corte input { font-size: 1.1rem; padding: 0.35rem; border: 2px solid var(--primario); }
+
+nav ul { list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; }
+nav a { font-weight: 600; padding: 0.25rem 0.5rem; }
+nav a[aria-current="page"] { background: var(--primario); color: #fff; }
+
+main { padding: 1rem 1.5rem 3rem; max-width: 90rem; }
+main:focus { outline: none; }
+main:focus-visible { outline: 3px solid var(--primario); }
+
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.2rem; margin-top: 1.5rem; }
+
+.ayuda, .nota { color: #3b4250; font-size: 0.95rem; }
+.error-campo { color: var(--error); font-weight: 600; min-height: 1.2em; }
+.error { color: var(--error); border: 2px solid var(--error); padding: 0.5rem 0.75rem; background: #fdecec; }
+.exito { color: var(--exito); font-weight: 700; }
+.advertencia { color: var(--aviso); font-weight: 600; }
+.cargando { font-style: italic; }
+.aviso-corte, .sin-registros {
+  padding: 0.75rem;
+  border-left: 4px solid var(--primario);
+  background: var(--suave);
+  font-weight: 600;
+}
+.banner-historico {
+  padding: 0.75rem;
+  border: 2px solid var(--aviso);
+  background: #fff7e0;
+  color: #3d2b00;
+  font-weight: 600;
+}
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  border: 2px solid var(--primario);
+  background: #fff;
+  color: var(--primario);
+  cursor: pointer;
+}
+button.primario { background: var(--primario); color: #fff; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+input, select, textarea { font: inherit; padding: 0.3rem; border: 1px solid var(--borde); }
+
+.filtros { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 0.75rem; }
+.filtros label { display: flex; flex-direction: column; font-weight: 600; }
+.conteo { margin: 0; }
+
+.tabla-contenedor { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+caption { text-align: left; font-weight: 700; padding: 0.25rem 0; }
+th, td { border: 1px solid var(--borde); padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
+thead th { background: var(--suave); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.insignia { display: inline-block; padding: 0 0.4rem; border: 1px solid currentColor; border-radius: 0.25rem; font-size: 0.9rem; font-weight: 600; }
+.prioridad-critica { color: #8b0000; background: #fdecec; }
+.prioridad-alta { color: #7a3300; background: #fff1e6; }
+.prioridad-media { color: #5c4a00; background: #fff9db; }
+.prioridad-baja { color: #1d4f2a; background: #eaf6ec; }
+.tipo-priorizacion { color: #8b0000; }
+.tipo-gestion { color: #4b2a7a; }
+.tipo-sin_alerta, .tipo-exclusion { color: #3b4250; }
+.estado-pendiente { color: #7a3300; }
+.estado-analizado { color: var(--primario); }
+.estado-decidido { color: var(--exito); }
+.hallazgo-documentado { color: var(--exito); }
+.hallazgo-inferido { color: var(--aviso); }
+
+.columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(28rem, 1fr)); gap: 0 2rem; }
+
+.ficha { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+.ficha dt { font-weight: 700; }
+.ficha dd { margin: 0; }
+
+.linea-tiempo { list-style: none; padding: 0; border-left: 3px solid var(--borde); }
+.linea-tiempo li { padding: 0.4rem 0.75rem; margin-left: 0.5rem; border-bottom: 1px solid #d9dee5; }
+.linea-tiempo li:focus { background: #e6f0fa; }
+.linea-tiempo time { font-variant-numeric: tabular-nums; font-weight: 700; }
+.linea-tiempo .descripcion { display: block; }
+.marca-dq { display: block; font-weight: 700; color: var(--error); }
+.marca-dq.nivel-verificar, .marca-dq.nivel-info { color: var(--aviso); }
+
+.motivos .puntos { font-variant-numeric: tabular-nums; font-weight: 700; }
+.lista-evidencia { list-style: none; padding-left: 1rem; margin: 0.15rem 0 0.4rem; font-size: 0.9rem; }
+.evidencia.no-verificable { color: var(--error); font-weight: 600; font-size: 0.9rem; }
+.compacta { margin: 0; padding-left: 1rem; }
+
+.propuesta { border: 2px solid var(--primario); padding: 0.75rem 1rem; margin-top: 1rem; }
+.origen { display: inline-block; margin: 0; padding: 0.2rem 0.6rem; font-weight: 700; }
+.origen-simulada { background: #fff7e0; color: #3d2b00; border: 2px solid var(--aviso); }
+.origen-real { background: #e6f0fa; color: #0b3a66; border: 2px solid var(--primario); }
+.verificacion { border-top: 1px solid var(--borde); margin-top: 1rem; }
+.verificacion.atencion h4 { color: var(--error); }
+
+.campo { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.75rem; max-width: 32rem; border: 0; padding: 0; }
+.campo label, .campo legend { font-weight: 700; }
+.opcion { font-weight: 400 !important; }
+
+.dialogo { max-width: 32rem; border: 2px solid var(--primario); padding: 1rem 1.25rem; }
+.dialogo::backdrop { background: rgb(0 0 0 / 0.45); }
+.acciones { display: flex; gap: 0.75rem; justify-content: flex-end; }
+
+code { font-size: 0.9em; }
