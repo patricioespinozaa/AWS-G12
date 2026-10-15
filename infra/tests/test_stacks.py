@@ -79,15 +79,25 @@ def test_api_sin_cache_y_web_con_oac(plantillas):
     assert _recursos(t["frontend"], "AWS::CloudFront::VpcOrigin")
 
 
-def test_una_sola_tarea_con_estado_y_rollback(plantillas):
-    _, t = plantillas
+def test_tareas_segun_donde_vive_el_estado(plantillas):
+    entorno, t = plantillas
+    # dev: estado en SQLite dentro del contenedor → 1 tarea, reemplazo con corte.
+    # demo: estado en RDS (F0005) → 2 tareas, despliegue sin corte.
+    tareas, minimo, maximo = (1, 0, 100) if entorno == "dev" else (2, 100, 200)
     t["backend"].has_resource_properties("AWS::ECS::Service", {
-        "DesiredCount": 1,
+        "DesiredCount": tareas,
         "DeploymentConfiguration": Match.object_like({
-            "MinimumHealthyPercent": 0, "MaximumPercent": 100,
+            "MinimumHealthyPercent": minimo, "MaximumPercent": maximo,
             "DeploymentCircuitBreaker": {"Enable": True, "Rollback": True}}),
         "HealthCheckGracePeriodSeconds": 360,
     })
+
+
+def test_la_app_solo_escribe_en_sus_prefijos_de_s3(plantillas):
+    _, t = plantillas
+    politicas = json.dumps(t["backend"].find_resources("AWS::IAM::Policy"))
+    assert "/hlf/canal/evidencias/*" in politicas and "/hlf/cargas/*" in politicas
+    assert "s3:DeleteObject" not in politicas
     t["backend"].has_resource_properties("AWS::ElasticLoadBalancingV2::TargetGroup", {
         "HealthCheckPath": "/api/meta", "Port": 8000})
 

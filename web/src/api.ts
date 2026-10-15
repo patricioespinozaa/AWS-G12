@@ -13,6 +13,10 @@ export interface Meta {
   agenda: { min: string; max: string };
   tipos_medicion: { tipo: string; nombre: string; unidad: string; rango: [number, number] }[];
   casos_referencia: { id_paciente: string; id_solicitud: string; patron: string }[];
+  /** Única usuaria de la plataforma (F0005); desde F0007, la de la sesión. */
+  usuaria: string;
+  /** rds: datos y registro en la base (habilita las cargas por periodo); local: CSV + SQLite. */
+  base_de_datos: "rds" | "local";
 }
 
 export interface FilaBandeja {

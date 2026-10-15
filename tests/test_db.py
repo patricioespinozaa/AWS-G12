@@ -17,6 +17,7 @@ from db.__main__ import main as cli
 from priorizacion.config import DATA_DIR
 
 
+@pytest.mark.datos
 def test_lee_y_convierte_los_csv():
     datos = carga.leer_todo(DATA_DIR)
     assert {t: len(f) for t, f in datos.items()} == {
@@ -69,7 +70,12 @@ def test_borrar_exige_esquema_explicito():
 
 
 URL = os.environ.get("HLF_TEST_DATABASE_URL")
-integracion = pytest.mark.skipif(not URL, reason="Define HLF_TEST_DATABASE_URL para probar contra PostgreSQL")
+_sin_base = pytest.mark.skipif(not URL, reason="Define HLF_TEST_DATABASE_URL para probar contra PostgreSQL")
+
+
+def integracion(prueba):
+    """Prueba contra PostgreSQL con el dataset cargado: requiere la base de prueba y el dataset."""
+    return pytest.mark.datos(_sin_base(prueba))
 SIN_PROGRESO = {"progreso": lambda *_: None}
 
 

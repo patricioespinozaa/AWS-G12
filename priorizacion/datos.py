@@ -142,6 +142,41 @@ def leer_csv(data_dir: Path = config.DATA_DIR) -> dict[str, pd.DataFrame]:
     }
 
 
+NOMBRES_EN_REPOSITORIO = {"pacientes": "pacientes", "lista_espera": "lista", "eventos_clinicos": "eventos",
+                          "mediciones": "mediciones", "agenda_box": "agenda", "citaciones": "citas"}
+
+
+def leer_postgres(conn) -> dict[str, pd.DataFrame]:
+    """Los mismos 6 DataFrames que leer_csv(), leídos del esquema raw de RDS (F0005).
+
+    Mismas columnas, en el mismo orden, y mismos tipos que con pandas sobre los CSV: fechas como datetime,
+    booleanos, valores numéricos como float y horas de la agenda como texto 'HH:MM'.
+    """
+    from db.carga import TABLAS
+    tablas: dict[str, pd.DataFrame] = {}
+    for t in TABLAS:
+        if t.nombre not in NOMBRES_EN_REPOSITORIO:
+            continue
+        columnas = [c for c, _ in t.columnas]
+        cur = conn.execute(f"SELECT {', '.join(columnas)} FROM raw.{t.nombre} ORDER BY {', '.join(t.llave)}")
+        df = pd.DataFrame(cur.fetchall(), columns=columnas)
+        for c, tipo in t.columnas:
+            if tipo == "date":
+                # Desde texto ISO, igual que al leer el CSV (misma resolución de datetime en pandas)
+                df[c] = pd.to_datetime(df[c].map(lambda v: v.isoformat() if v is not None else None))
+            elif tipo == "time":
+                df[c] = df[c].map(lambda v: v.strftime("%H:%M") if v is not None else None)
+            elif tipo == "numeric":
+                df[c] = df[c].astype(float)
+            elif tipo == "int":
+                df[c] = df[c].astype("float64") if df[c].isna().any() else df[c].astype("int64")
+            elif tipo == "bool":
+                df[c] = df[c].astype(bool)
+        tablas[NOMBRES_EN_REPOSITORIO[t.nombre]] = df
+    tablas["lista"]["diagnostico_cie10"] = tablas["lista"]["diagnostico_cie10"].astype(str).str.strip().str.upper()
+    return {k: tablas[k] for k in ("pacientes", "lista", "eventos", "mediciones", "agenda", "citas")}
+
+
 class Repositorio:
     """Datos en memoria para el motor y las vistas."""
 
@@ -156,6 +191,17 @@ class Repositorio:
     @classmethod
     def desde_csv(cls, data_dir: Path = config.DATA_DIR) -> "Repositorio":
         return cls(leer_csv(data_dir))
+
+    @classmethod
+    def desde_postgres(cls, url: str | None = None) -> "Repositorio":
+        from db.conexion import conectar
+        with conectar(url) as conn:
+            return cls(leer_postgres(conn))
+
+    @classmethod
+    def crear(cls) -> "Repositorio":
+        """Desde RDS si está configurada (F0005); si no, desde los CSV locales."""
+        return cls.desde_postgres() if config.usa_rds() else cls.desde_csv()
 
     # -- construcción ----------------------------------------------------------------------
     def _construir(self):
@@ -241,3 +287,11 @@ class Repositorio:
     @property
     def fecha_min(self) -> date:
         return min(s.fecha_ingreso for s in self.solicitudes.values())
+
+    @property
+    def fecha_max_datos(self) -> date:
+        """Última fecha con datos (eventos, mediciones, citas, agenda o ingresos a la lista)."""
+        t = self.tablas
+        fechas = [t["eventos"]["fecha_evento"].max(), t["mediciones"]["fecha_medicion"].max(),
+                  t["citas"]["fecha_cita"].max(), t["agenda"]["fecha"].max(), t["lista"]["fecha_ingreso_lista"].max()]
+        return max(f for f in fechas if pd.notna(f)).date()
