@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from datos import FECHA_REFERENCIA
 
-# ⚙️ Todos los pesos son AJUSTABLES y deben validarse con clínicos
+#  Todos los pesos son AJUSTABLES y deben validarse con clínicos
 BASE = {"baja": 20, "media": 40, "alta": 60}
 ORDEN = ["baja", "media", "alta", "critica"]
 SLA_DIAS = {"alta": 30, "media": 90, "baja": 180}   # referencial; ajustar a normativa local

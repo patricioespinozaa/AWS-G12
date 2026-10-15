@@ -1,25 +1,21 @@
 import os
 import anthropic
-
-
+from dotenv import load_dotenv
 
 load_dotenv()
 
-AWI = os.getenv("ANTHROPIC_WORKSPACE_ID")
+MODEL = os.environ["ANTHROPIC_MODEL"]           # modelo habilitado en el workspace
+PROMPT_VERSION = "copiloto-le-hlf-v0.3.1"       # subir con cada cambio de prompt o tools
+FECHA_REFERENCIA = "2026-10-13"                 # fotografía del campo 'estado'
 
-
-# El SDK envía el header anthropic-version automáticamente.
-MODEL = os.environ["ANTHROPIC_MODEL"]          # modelo habilitado en tu workspace
-PROMPT_VERSION = "copiloto-le-v0.1"            # versiona cada cambio del prompt
-SALT_PSEUDONIMO = os.environ["SALT_PSEUDONIMO"]  # secreto para hashear RUT
+# Solo se exige con datos reales (RUT). El dataset sintético no lo necesita.
+SALT_PSEUDONIMO = os.getenv("SALT_PSEUDONIMO")
+MAX_TOKENS = int(os.getenv("ANTHROPIC_MAX_TOKENS", "4096"))
 
 def get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        # Scoping del proyecto vía workspace, según la configuración de tu plataforma
-        default_headers={
-            "anthropic-workspace-id": os.environ["ANTHROPIC_WORKSPACE_ID"],
-        },
+        api_key=os.environ["APIK"],
+        default_headers={"anthropic-workspace-id": os.environ["ANTHROPIC_WORKSPACE_ID"]},
         max_retries=3,
         timeout=120.0,
-    )
+    )  
