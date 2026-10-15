@@ -1,0 +1,4 @@
+# Infraestructura (AWS CDK v2 en Python). La CLI se instala aparte: npm install -g aws-cdk
+aws-cdk-lib>=2.180,<3
+constructs>=10,<11
+pytest>=8

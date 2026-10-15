@@ -6,10 +6,10 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 
 | ID | Feature | Estado | Depende de | Servicios AWS |
 |---|---|---|---|---|
-| [F0001](F0001-subida-datos-aws.md) | Datos crudos en RDS (esquema `raw`) | Hecha | — | RDS PostgreSQL, Secrets Manager |
+| [F0001](F0001-subida-datos-aws.md) | Datos crudos en RDS (esquema `raw`) | Hecha (probada en AWS) | — | RDS PostgreSQL, Secrets Manager |
 | [F0002](F0002-modelo-datos-canales.md) | Modelo de datos de la app y de los canales del paciente | Hecha (DDL) | F0001 | RDS |
-| [F0003](F0003-flujos-aws-datos.md) | Estructura de datos de los flujos AWS: reloj, `consulta`, S3 + Athena | Hecha (DDL y capa Athena) | F0002 | S3, Athena, Glue Data Catalog |
-| [F0004](F0004-despliegue-frontend-backend.md) | Despliegue del frontend y el backend en AWS | Plan | F0003 | CloudFront, S3, ECS Fargate, ALB, ECR, VPC, CDK |
+| [F0003](F0003-flujos-aws-datos.md) | Estructura de datos de los flujos AWS: reloj, `consulta`, S3 + Athena | Hecha (probada en AWS) | F0002 | S3, Athena, Glue Data Catalog |
+| [F0004](F0004-despliegue-frontend-backend.md) | Despliegue del frontend y el backend en AWS | Hecha (desplegada en `demo`) | F0003 | CloudFront, S3, ECS Fargate, ALB, ECR, VPC, CDK |
 | [F0005](F0005-persistencia-app-rds.md) | La app usa RDS en vez de CSV + SQLite | Plan | F0004 | RDS, S3 |
 | [F0006](F0006-proceso-nocturno-reloj.md) | Proceso nocturno y reloj de la demo en AWS | Plan | F0005 | EventBridge Scheduler, ECS (tarea programada), S3, Athena |
 | [F0007](F0007-autenticacion-roles.md) | Autenticación y roles del equipo clínico | Plan | F0004 | Cognito |
