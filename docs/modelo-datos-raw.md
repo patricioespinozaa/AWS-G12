@@ -16,12 +16,15 @@ Documentación del modelo de datos **en crudo (raw)** del reto *Priorización Cl
 | `pacientes.csv` | 500 | un paciente | **PK** `id_paciente` |
 | `lista_espera.csv` | 500 | una solicitud de interconsulta en espera | **PK** `id_solicitud` · **FK** `id_paciente` |
 | `eventos_clinicos.csv` | 786 | un evento clínico fechado | **PK** `id_evento` · **FK** `id_paciente` |
-| `mediciones.csv` | 2.487 | una medición fechada | **FK** `id_paciente` (sin PK propia) |
-| `agenda_box.csv` | 2.188 | un bloque de agenda de un box en un día | **FK lógica** `id_box` (grano box+día; sin PK de una sola columna) |
-| `citaciones.csv` | 257 | una cita ofrecida a un paciente | **PK** `id_cita` · **FK** `id_paciente`, `id_box` |
+| `mediciones.csv` | 2.487 | una medición fechada | **PK compuesta** `id_paciente` + `fecha_medicion` + `tipo_medicion` (0 duplicados) · **FK** `id_paciente` |
+| `agenda_box.csv` | 2.188 | un bloque de agenda de un box en un día | **PK compuesta** `id_box` + `fecha` (un solo bloque por día; 0 duplicados) · **FK** `id_box` → `box` |
+| `citaciones.csv` | 257 | una cita ofrecida a un paciente | **PK** `id_cita` · **FK** `id_paciente`, `id_box` → `box` |
 | `perfiles.json` | 500 | un objeto por paciente con sus series anidadas | igual que las tablas, ya consolidado |
+| *`box`* (derivada) | 20 | un box del hospital | **PK** `id_box` |
 
 > `perfiles.json` no es una tabla adicional: entrega **el mismo contenido ya unido** (eventos, mediciones y citas anidadas dentro de cada paciente). Útil para consumo por paciente sin hacer joins.
+>
+> `box` no viene como archivo: se deriva de los `id_box` distintos de `agenda_box` (`BOX-01` … `BOX-20`). Hace falta porque en `agenda_box` el `id_box` se repite cada día, así que no puede ser destino de una llave foránea.
 
 ---
 
@@ -33,7 +36,12 @@ erDiagram
     PACIENTES ||--o{ EVENTOS_CLINICOS : "0..N eventos"
     PACIENTES ||--o{ MEDICIONES : "0..N mediciones"
     PACIENTES ||--o{ CITACIONES : "0..N citas"
-    AGENDA_BOX }o--o{ CITACIONES : "id_box (box+dia)"
+    BOX ||--o{ AGENDA_BOX : "1 bloque por dia habil"
+    BOX ||--o{ CITACIONES : "id_box"
+
+    BOX {
+        text id_box PK "BOX-01..BOX-20"
+    }
 
     PACIENTES {
         text id_paciente PK "PAC-HLF-00001..00500"
@@ -71,17 +79,17 @@ erDiagram
     }
 
     MEDICIONES {
-        text id_paciente FK
-        date fecha_medicion
-        text tipo_medicion "8 tipos"
+        text id_paciente PK, FK
+        date fecha_medicion PK
+        text tipo_medicion PK "8 tipos"
         num  valor
         text unidad "% / L/min / mg/dL / mmHg / puntos"
         bool fuera_de_rango
     }
 
     AGENDA_BOX {
-        text id_box "BOX-01..BOX-20"
-        date fecha "dias habiles"
+        text id_box PK, FK "BOX-01..BOX-20"
+        date fecha PK "dias habiles"
         text especialidad
         time bloque_inicio "08:30"
         time bloque_fin "13:30"
@@ -106,7 +114,8 @@ erDiagram
 - **Llave principal `id_paciente`**: une `pacientes` con `lista_espera`, `eventos_clinicos`, `mediciones` y `citaciones`. Es el eje de todo el modelo.
 - **`pacientes` → `lista_espera`**: relación **1 : 1** (cada paciente tiene exactamente una solicitud en espera; 500 y 500).
 - **`pacientes` → `eventos_clinicos` / `mediciones` / `citaciones`**: relación **1 : 0..N**. No todos los pacientes tienen filas; la ausencia significa "sin señales registradas mientras espera" (estable o ingreso reciente), no es un error.
-- **`citaciones` → `agenda_box`** vía `id_box`: enlaza el uso real (quién fue citado) con la capacidad instalada (el box del hospital). `agenda_box` es del **hospital**, no del paciente, por eso su grano es `box + día` y no tiene `id_paciente`.
+- **`citaciones` y `agenda_box` → `box`** vía `id_box`: ambas apuntan a la dimensión box. `agenda_box` es del **hospital**, no del paciente, por eso su grano es `box + día` y no tiene `id_paciente`.
+- **`citaciones` ↔ `agenda_box` casi no cruzan por día:** de 257 citas, 118 no tienen bloque para ese box ese día, 121 caen en un box que ese día atiende otra especialidad y 27 son anteriores al inicio de la agenda (2026-04-14). Por eso no hay llave foránea por `(id_box, fecha)`: capacidad (`agenda_box`) y uso (`citaciones`) se analizan por separado, agregados por especialidad y semana.
 
 ---
 
@@ -120,14 +129,15 @@ flowchart LR
     E --> PR{Prioridad dinamica<br/>recalculada a una fecha de corte}
     M --> PR
     L --> PR
-    PR --> C[citaciones<br/>a quien se cito]
-    AB[agenda_box<br/>capacidad instalada del hospital] --> C
+    PR -. uso propuesto:<br/>a quien citar .-> C[citaciones<br/>historial de citas]
+    AB[agenda_box<br/>capacidad instalada del hospital] -. cupos libres .-> C
     P -. control de exclusion<br/>fallecido=true .-> PR
 ```
 
 - `lista_espera` es la **fotografía estática** (`prioridad_inicial`) que el reto busca "despertar".
 - `eventos_clinicos` + `mediciones` son el **motor dinámico**: para recalcular la prioridad a una fecha de corte se usan **solo** los registros con `fecha ≤ corte`, simulando lo que el hospital sabía ese día.
 - `agenda_box` aporta la **capacidad** y `citaciones` el **uso real**, para analizar aprovechamiento del recurso box.
+- Las líneas punteadas son el **uso propuesto**: en el dataset, las citas son históricas y no se derivan de ninguna prioridad.
 - **Control de exclusión:** pacientes con `fallecido = true` salen de la lista y no reciben nuevas citaciones; toda su actividad es anterior a `fecha_defuncion`.
 
 ---
@@ -154,12 +164,14 @@ flowchart LR
 | `id_solicitud` | texto | `IC-HLF-#####` (PK) |
 | `especialidad` | texto | Broncopulmonar, Cardiología, Endocrinología, Gastroenterología, Neurología, Salud Mental, Traumatología |
 | `sub_especialidad` | texto | 15 valores coherentes con la especialidad |
-| `diagnostico_cie10` | texto | E03, E11, E66, F32, F41, G40, G43, I10, I20, I50, J44, J45, K21, K70, M17, M54, M75 |
+| `diagnostico_cie10` | texto | E03, E11, E66, F32, F41, G40, G43, I10, I20, I50, J44, J45, K21, K70, M17, M54, M75 (todos de 3 caracteres, sin subcategoría: no llevan punto) |
 | `diagnostico_texto` | texto | descripción del CIE-10 |
 | `prioridad_inicial` | texto | alta, media, baja |
-| `fecha_ingreso_lista` | fecha | 2025-04-21 … 2026-10 |
+| `fecha_ingreso_lista` | fecha | 2025-04-21 … 2026-09-30 |
 | `origen_derivacion` | texto | CESFAM/APS, Urgencia, Hospitalización, Otro hospital red |
-| `estado` | texto | en_espera, atendido, fallecido (categorías posibles: + citado, egresado) |
+| `estado` | texto | en_espera, atendido, fallecido (categorías posibles: + citado, egresado). Es **solo el estado final**: no hay fecha de egreso |
+
+> `estado` no trae fecha. Para series temporales, el egreso de un `atendido` se infiere de su primera cita con `asistio`, y el de un `fallecido`, de `fecha_defuncion`. Asistir a una cita no saca al paciente de la lista: 76 citas con `asistio` son de pacientes que siguen `en_espera`.
 
 ### `eventos_clinicos.csv` — motor dinámico (786 filas)
 | Campo | Tipo | Valores / rango |
@@ -170,7 +182,7 @@ flowchart LR
 | `tipo_evento` | texto | cambio_farmaco, control_aps, examen_alterado, hospitalizacion, visita_urgencia |
 | `subtipo` | texto | 13 valores (p. ej. aumento dosis, triage ESI 2, ingreso hospitalario) |
 | `severidad` | texto | leve, moderada, grave |
-| `detalle` | texto | texto libre (incluye la especialidad) |
+| `detalle` | texto | plantilla fija `"<subtipo> (<especialidad>)"` en el 100 % de las filas. **No es texto libre clínico** |
 
 ### `mediciones.csv` — señales objetivas (2.487 filas)
 | Campo | Tipo | Valores / rango |
@@ -187,7 +199,7 @@ flowchart LR
 ### `agenda_box.csv` — capacidad instalada (2.188 filas)
 | Campo | Tipo | Valores / rango |
 |---|---|---|
-| `id_box` | texto | `BOX-01` … `BOX-20` |
+| `id_box` | texto | `BOX-01` … `BOX-20` (PK compuesta con `fecha`; FK → `box`) |
 | `fecha` | fecha | 2026-04-14 … 2026-10-13 (días hábiles) |
 | `especialidad` | texto | las 7 especialidades |
 | `bloque_inicio` | hora | 08:30 |
@@ -201,8 +213,8 @@ flowchart LR
 |---|---|---|
 | `id_paciente` | texto | FK → `pacientes` |
 | `id_cita` | texto | `CT-######` (PK) |
-| `id_box` | texto | FK → `agenda_box` (`BOX-01`…`BOX-20`) |
-| `fecha_cita` | fecha | 2026-01-31 … |
+| `id_box` | texto | FK → `box` (`BOX-01`…`BOX-20`) |
+| `fecha_cita` | fecha | 2026-01-31 … 2026-10-10 |
 | `especialidad` | texto | las 7 especialidades |
 | `estado_cita` | texto | asistio, no_asistio, reprogramo, cancelo |
 | `minutos_atencion_real` | entero | 15 – 55, o vacío (solo si `estado_cita = asistio`) |
@@ -221,18 +233,22 @@ Comprobado directamente sobre los CSV (no solo sobre la documentación):
 | FK `eventos_clinicos.id_paciente` | 381 pacientes con eventos · **0 huérfanos** |
 | FK `mediciones.id_paciente` | 451 pacientes con mediciones · **0 huérfanos** |
 | FK `citaciones.id_paciente` | 237 pacientes citados · **0 huérfanos** |
-| FK `citaciones.id_box` → `agenda_box.id_box` | 20 boxes en ambos lados · **0 huérfanos** |
+| FK `citaciones.id_box` y `agenda_box.id_box` → `box` | 20 boxes en ambos lados · **0 huérfanos** |
+| Unicidad `mediciones` (`id_paciente`, `fecha_medicion`, `tipo_medicion`) | **0 duplicados** |
+| Unicidad `agenda_box` (`id_box`, `fecha`) | **0 duplicados** · un único bloque (08:30–13:30) |
+| Cruce `citaciones` (`id_box`, `fecha_cita`) → `agenda_box` (`id_box`, `fecha`) | ⚠️ **118 de 257 sin bloque** ese día · 121 en box de otra especialidad · 27 antes de 2026-04-14 |
+| Eventos y mediciones dentro de [ingreso, hoy o defunción] | ✅ 0 fuera de rango |
 
 **Lecturas clave:**
 - Cobertura temporal parcial: 381/500 pacientes tienen eventos y 451/500 tienen mediciones. La ausencia es información válida (paciente estable o de ingreso reciente), no un fallo de datos.
 - Solo 237/500 pacientes han sido citados: el embudo lista de espera → cita está lejos de cubrir toda la lista.
-- `agenda_box` no tiene PK de una sola columna: la clave natural es `id_box + fecha (+ bloque)`. `citaciones.id_box` referencia la **dimensión box**, no una fila concreta de agenda.
+- `citaciones.id_box` referencia la **dimensión box**, no una fila concreta de agenda: el cruce por día no es confiable.
 
 ---
 
 ## 6. Notas de uso
 
-1. **Enlace único entre tablas de paciente:** `id_paciente`. Para el uso de box: `citaciones.id_box → agenda_box.id_box`.
+1. **Enlace único entre tablas de paciente:** `id_paciente`. Para el uso de box: `citaciones.id_box` y `agenda_box.id_box` → `box.id_box`; no cruzar citas con bloques por fecha.
 2. **Recalcular prioridad a una fecha de corte:** usar solo registros con `fecha ≤ corte`.
 3. **Ausencias con significado:** sin filas en `eventos_clinicos`/`mediciones` ⇒ paciente sin señales registradas (no es error).
 4. **Exclusión por fallecimiento:** `fallecido = true` ⇒ fuera de la lista, sin nuevas citaciones; toda su actividad es previa a `fecha_defuncion`.

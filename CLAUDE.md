@@ -60,6 +60,7 @@ Stack del MVP (detalle en `docs/mvp.md`):
 - `priorizacion/`: motor de dominio en Python (pandas). Las reglas y pesos están en `priorizacion/reglas.py`; todo cambio sube `VERSION_REGLAS`.
 - `api/`: FastAPI. `web/`: React + TypeScript + Vite + Recharts.
 - Registro local en SQLite (`data/processed/priorizacion.sqlite`, ignorado por git; se regenera al iniciar la API si no existe).
+- `db/`: base PostgreSQL en AWS RDS. DDL versionado en `db/sql/<esquema>/` (idempotente), carga de los CSV al esquema `raw` y verificación. Detalle en `docs/feature/subida-datos-aws.md`.
 
 Comandos:
 - Instalar: `pip install -r requirements.txt` y `cd web && npm install`
@@ -67,4 +68,6 @@ Comandos:
 - Desarrollo: `uvicorn api.main:app --reload --port 8000` + `cd web && npm run dev` (http://localhost:5173)
 - Tests: `python -m pytest` (usa una base temporal)
 - Consolidación nocturna: `python -m priorizacion.nocturno`
+- Base en AWS: `bash db/infra/crear_rds.sh` (crea la instancia RDS si no existe) y `python -m db restaurar` (crea el esquema `raw`, carga los CSV y verifica). Conexión por `HLF_DATABASE_URL` o `HLF_DB_SECRET_ID` + `HLF_DB_HOST`; nunca credenciales en el repo
+- Tests de la base contra PostgreSQL: `HLF_TEST_DATABASE_URL=postgresql://… python -m pytest tests/test_db.py` (usar una base desechable)
 - EDA: notebooks en `notebooks/`; `notebooks/carga.py` carga el dataset desde `data/dataset_hlf_ambulatorio/dataset_hlf_ambulatorio/`.
