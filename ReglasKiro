@@ -1,0 +1,34 @@
+Revisa este proyecto y las instrucciones de .kiro/steering.
+
+Objetivo:
+Crear un prototipo de solo lectura para apoyar la revisión clínica
+de pacientes que esperan su primera consulta.
+
+Entradas:
+- data/raw/perfiles.json como entrada consolidada del prototipo.
+- CSV como representación alternativa para conciliación.
+- docs/dataset_README.md y docs/diccionario_datos.md.
+
+No leas .env.
+No hagas llamadas a APIs.
+No modifiques data/raw.
+No interpretes el dataset sintético como evidencia clínica validada.
+
+Primera etapa:
+1. Inspecciona la estructura real de los archivos.
+2. Propón un plan de implementación y criterios de aceptación.
+3. Crea contratos Pydantic.
+4. Implementa validación y normalización.
+5. Convierte minutos_atencion_real="" a null en la copia normalizada,
+   conservando el original.
+6. Detecta saturacion_o2 fuera de 0–100 como problema de datos,
+   no como deterioro clínico.
+7. Asigna referencias trazables a cada registro.
+8. Detecta discordancias entre estado de lista y citas asistidas.
+9. Implementa pruebas sin API.
+10. Documenta los supuestos y las limitaciones.
+
+No implementes todavía cambios de prioridad ni generación
+de alertas clínicas en producción.
+
+Si falta información, regístrala; no la inventes.
