@@ -315,7 +315,7 @@ Variables: `HLF_S3_BUCKET` (obligatoria), `HLF_S3_PREFIJO` (por defecto `hlf`), 
 - **Capa Athena con S3 y Athena simulados** (`tests/test_athena.py`, 16 pruebas): Parquet con tipos exactos, subida idempotente, DDL con partition projection, parámetros, resultados tipados y paginados, rechazo de SQL de escritura y exportación del historial desde PostgreSQL.
 - **DuckDB sobre los Parquet generados:** el mismo SQL de `verificar` da conteos correctos y 0 huérfanos, `valor` se lee como `DECIMAL(12,3)` y el historial particionado se filtra por fecha.
 
-**No probado contra AWS real:** esta máquina no tiene credenciales. `crear_s3_athena.sh` solo se revisó en sintaxis. Falta correr `publicar` y `verificar` en la cuenta del hackatón.
+- **AWS real** (2026-10-15, cuenta del hackatón, `us-east-1`): `python -m db athena publicar` sobre el bucket y el workgroup creados por CDK (F0004) subió los 6 CSV y 7 Parquet, creó `hlf_raw` e `hlf_historial` y verificó contra Athena: conteos correctos, 0 huérfanos, `valor` como `decimal`. El reloj, `consulta` y los roles se crearon y verificaron en la RDS del entorno `demo`. `crear_s3_athena.sh` no se usó (lo reemplaza el stack de datos de CDK) y solo se revisó en sintaxis.
 
 ## Pendientes
 

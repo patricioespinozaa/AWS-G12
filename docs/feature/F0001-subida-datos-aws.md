@@ -337,7 +337,7 @@ Contra PostgreSQL 16 local, con los tres esquemas (`tests/test_db.py`, 11 prueba
 - **Borrado seguro:** `borrar --esquema raw` se rechaza mientras existan `priorizacion` o `canal`.
 - **Verificación:** detecta una llave foránea eliminada en `priorizacion`.
 
-`db/infra/crear_rds.sh` solo se revisó en sintaxis: no se ha ejecutado contra AWS.
+En AWS (2026-10-15, cuenta del hackatón, RDS PostgreSQL 16 privada creada por CDK, F0004): `python -m db restaurar` y `permisos`, corridos como tarea ECS dentro de la VPC, cargaron las 6.738 filas en 0,2 s y la verificación salió completa en los cuatro esquemas. `db/infra/crear_rds.sh` no se usó (lo reemplaza el stack de datos de CDK) y solo se revisó en sintaxis.
 
 ## Flujo de la feature
 

@@ -1,6 +1,6 @@
 # F0004 · Despliegue del frontend y el backend en AWS
 
-**Estado:** Plan · **Depende de:** F0003 · **Tamaño:** L
+**Estado:** Hecha (desplegada en `demo`) · **Depende de:** F0003 · **Tamaño:** L
 
 ## Objetivo
 
@@ -92,7 +92,7 @@ infra/
 - Las seis vistas (bandeja, ficha, agenda, canal, KPIs, nocturno) cargan desde esa URL.
 - El ALB no tiene IP pública. Una petición directa al ALB desde internet no responde.
 - El bucket web y el de datos rechazan el acceso público. `aws s3 ls` sin credenciales falla.
-- La imagen no contiene archivos `.csv` (`docker run --rm imagen find / -name "*.csv"` no devuelve nada).
+- La imagen no contiene datos del proyecto (`docker run --rm --entrypoint sh imagen -c 'find /app -name "*.csv"'` no devuelve nada).
 - `cdk destroy --all -c entorno=dev` deja la cuenta sin recursos del proyecto. En `demo`, los buckets y RDS se conservan: tienen `RETAIN` o snapshot.
 - CI corre en cada PR y falla si fallan los tests, el build del frontend o `cdk synth`.
 
@@ -101,9 +101,39 @@ infra/
 - **Automáticas:** `tests/test_athena.py` (descarga con S3 simulado), `infra/tests/` (templates sintetizados) y CI.
 - **Manuales:** `docker build` y `docker run` en local; después del despliegue, recorrer las vistas, registrar una decisión clínica y ver los logs en CloudWatch.
 
+## Despliegue realizado
+
+Desplegado el 2026-10-15 en la cuenta del hackatón (`us-east-1`, entorno `demo`): **https://<distribucion>.cloudfront.net**
+
+| Paso | Resultado |
+|---|---|
+| `cdk bootstrap` | Cuenta preparada (stack `CDKToolkit`) |
+| `HlfDemo-Red`, `HlfDemo-Datos` | VPC, bucket, workgroup y RDS PostgreSQL 16 creados (~8 min, la mayor parte RDS) |
+| `python -m db athena publicar` | 6 CSV + 7 Parquet en S3, tablas en Athena, verificación en verde contra Athena real |
+| `HlfDemo-Backend` | Imagen construida y subida a ECR. La tarea descargó y verificó los CSV desde S3 y arrancó en ~11 s (4 min 19 s de despliegue) |
+| `HlfDemo-Frontend` | CloudFront con VPC origin (12 min 20 s; el VPC origin es lo más lento) |
+| Carga de RDS por tarea ECS (`python -m db restaurar` y `permisos`) | 4 esquemas, 6.738 filas, verificación en verde dentro de la VPC |
+
+## Probado
+
+- **Criterios de aceptación verificados en AWS:**
+  - Las 8 rutas de la SPA (incluidas `/ficha/IC-HLF-00001` y la raíz) devuelven la app; las 7 rutas de la API responden 200 por CloudFront, y una ruta inexistente de la API devuelve el 404 en JSON (no `index.html`).
+  - El ALB es `internal`: una petición directa a su DNS desde internet no responde.
+  - Los buckets web y de datos responden 403 sin credenciales.
+  - HTTP redirige a HTTPS; los archivos de Vite salen con `max-age=31536000, immutable`, HSTS y `nosniff`.
+  - Una decisión clínica registrada por CloudFront (`POST /api/solicitudes/{id}/decisiones`) cambia la prioridad vigente y recalcula la cola.
+  - La imagen no contiene datos del proyecto (`find /app -name "*.csv"` vacío). Los únicos `.csv` de la imagen son datos de prueba de numpy y scikit-learn en `site-packages`.
+- **Local:** la API arranca con solo `requirements/base.txt` (23 s, primer arranque con el cálculo completo); el contenedor arranca con el dataset montado (16 s) y sin datos falla con un mensaje claro.
+- **Automáticas:** `infra/tests/test_stacks.py` (22 pruebas sobre los templates de `dev` y `demo`) y `tests/test_athena.py` (descarga verificada: completa, archivo alterado, manifiesto incompleto).
+
+**Pendiente de F0004:**
+
+- **Despliegue desde GitHub Actions:** `deploy.yml` necesita un rol IAM con confianza OIDC en GitHub (`secrets.AWS_DEPLOY_ROLE_ARN`). Falta comprobar si el rol del hackatón (`WSParticipantRole`) permite crearlo. Mientras tanto, se despliega desde una máquina con Docker siguiendo `infra/README.md`.
+- **CI sin dataset:** el dataset no se versiona, así que en CI las pruebas que lo necesitan se saltan. Para cubrirlas hace falta un dataset sintético reducido en `data/synthetic/`.
+
 ## Riesgos y decisiones abiertas
 
-- **Cuenta del hackatón:** puede restringir servicios o regiones. CloudFront VPC origins y Fargate deben estar disponibles en la región elegida; si no, el plan B es un ALB público con una cabecera secreta que solo CloudFront envía.
-- **SG del ALB con VPC origin:** si la prefix list no alcanza, permitir el SG `CloudFront-VPCOrigins-Service-SG` que crea CloudFront.
-- **Primer arranque lento:** el cálculo de la serie completa puede tardar más que la gracia del health check. Mitigación: subir la gracia, o precalcular la serie en F0006 y que la API solo la lea.
+- ~~**Cuenta del hackatón**~~: CloudFront VPC origins, Fargate y RDS funcionaron en `us-east-1` con el rol `WSParticipantRole`.
+- ~~**SG del ALB con VPC origin**~~: la regla desde la prefix list `com.amazonaws.global.cloudfront.origin-facing` bastó.
+- **Primer arranque:** en Fargate tardó ~11 s, muy por debajo de la gracia de 6 minutos. Crecerá con datos reales; F0006 lo resuelve precalculando la serie.
 - **Estado local** (SQLite y memoria): se pierde al reiniciar la tarea hasta F0005.
