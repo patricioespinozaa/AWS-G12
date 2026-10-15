@@ -9,6 +9,8 @@ from pathlib import Path
 import psycopg
 
 SQL_DIR = Path(__file__).resolve().parent / "sql"
+# En orden de dependencia: priorizacion referencia raw; canal referencia ambos
+ESQUEMAS = ("raw", "priorizacion", "canal")
 
 
 def _ejecutar(conn: psycopg.Connection, archivos: list[Path]) -> list[str]:
