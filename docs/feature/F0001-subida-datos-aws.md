@@ -18,7 +18,7 @@ Dentro de la misma base, la información se separa en tres esquemas:
 - Esquema `priorizacion`: las tablas que genera el sistema (serie nocturna, propuestas, factores, decisiones clínicas, agenda y estimación de espera).
 - Esquema `canal`: la comunicación con el paciente por WhatsApp y por teléfono con asistente de IA.
 
-`priorizacion` y `canal` se detallan en [F0002](F0002-modelo-datos-canales.md). Ver también [Esquemas de la app](#esquemas-de-la-app-priorizacion-y-canal).
+`priorizacion` y `canal` se detallan en [F0002](F0002-modelo-datos-canales.md). Ver también [Esquemas de la app](#esquemas-de-la-app-priorizacion-canal-y-consulta).
 
 ## Modelo relacional base (esquema raw)
 
@@ -251,7 +251,7 @@ db/
 ├── __init__.py
 ├── __main__.py              # línea de comandos: python -m db <comando>
 ├── conexion.py              # conexión: HLF_DATABASE_URL, Secrets Manager o variables PG*; SSL fuera de localhost
-├── esquema.py               # aplica los scripts SQL en orden de dependencia: raw → priorizacion → canal
+├── esquema.py               # aplica los scripts SQL en orden de dependencia: raw → priorizacion → canal y consulta
 ├── carga.py                 # lee y convierte los CSV; COPY en la primera carga, sincronización en las siguientes
 ├── verificacion.py          # raw: conteos, huérfanos, propiedades. Demás esquemas: estructura y protecciones
 ├── athena.py                # capa S3 + Athena: raw en Parquet, historial por fecha, consultas exactas (F0003)
@@ -266,13 +266,13 @@ db/
     ├── crear_rds.sh         # crea la instancia RDS con AWS CLI si no existe
     └── crear_s3_athena.sh   # crea el bucket y el workgroup de Athena (F0003)
 tests/test_db.py             # conversión de CSV y CLI; con base de prueba: carga, sincronización, rollback,
-                             # borrado seguro y reglas de priorizacion y canal
+                             # borrado seguro, reloj y reglas de priorizacion, canal y consulta
 ```
 
 ### Recuperación rápida (si se borró todo)
 
 ```bash
-pip install -r requirements.txt boto3
+pip install -r requirements.txt
 
 # 1. Solo si la instancia RDS ya no existe (5 a 10 minutos). Al final imprime las variables a exportar.
 bash db/infra/crear_rds.sh
@@ -280,7 +280,7 @@ bash db/infra/crear_rds.sh
 # 2. Exportar las variables que imprimió el paso 1 (o definir HLF_DATABASE_URL directamente)
 export AWS_REGION=…  HLF_DB_HOST=…  HLF_DB_NAME=hlf  HLF_DB_SECRET_ID=…
 
-# 3. Crear los esquemas (raw, priorizacion, canal), cargar los CSV y verificar (menos de 1 segundo de carga)
+# 3. Crear los esquemas (raw, priorizacion, canal, consulta), cargar los CSV y verificar (menos de 1 segundo de carga)
 python -m db restaurar
 
 # 4. Solo la primera vez en una instancia nueva: roles de la base (requiere CREATEROLE)
@@ -294,12 +294,14 @@ Si la instancia sigue viva y solo se borraron los datos, basta con el paso 3. `r
 | Comando | Qué hace |
 |---|---|
 | `python -m db probar` | Prueba la conexión y muestra versión, base y usuario |
-| `python -m db esquema` | Crea los esquemas `raw`, `priorizacion` y `canal` que falten (idempotente). `--esquema raw` aplica solo uno |
+| `python -m db esquema` | Crea los esquemas `raw`, `priorizacion`, `canal` y `consulta` que falten (idempotente). `--esquema raw` aplica solo uno |
 | `python -m db cargar` | Carga los CSV en `raw`. Si ya tiene datos se detiene; con `--reemplazar` los sincroniza con los CSV |
 | `python -m db restaurar` | Todos los esquemas + carga sincronizada + verificación, todo de una vez. **Es el comando para el día a día** |
-| `python -m db verificar` | `raw`: conteos contra la última carga, huérfanos, eventos posteriores a la defunción e indicadores informativos. `priorizacion` y `canal`: tablas, vistas, llaves foráneas, triggers de auditoría y catálogos |
-| `python -m db permisos` | Crea los roles `hlf_lectura_raw`, `hlf_app` y `hlf_asistente_ia`. Requiere CREATEROLE |
-| `python -m db borrar --esquema E --confirmar` | Elimina un esquema (`raw`, `priorizacion`, `canal`) o `todos`. Se niega a borrar uno del que depende otro |
+| `python -m db verificar` | `raw`: conteos contra la última carga, huérfanos, eventos posteriores a la defunción e indicadores informativos. `priorizacion`, `canal` y `consulta`: tablas, vistas, llaves foráneas, triggers de auditoría, catálogos y reloj |
+| `python -m db permisos` | Crea los roles `hlf_lectura_raw`, `hlf_app`, `hlf_asistente_ia`, `hlf_preparacion_kb` y `hlf_consulta_ia`. Requiere CREATEROLE |
+| `python -m db borrar --esquema E --confirmar` | Elimina un esquema (`raw`, `priorizacion`, `canal`, `consulta`) o `todos`. Se niega a borrar uno del que depende otro |
+| `python -m db reloj` | Muestra o cambia la fecha de corte: `--demo AAAA-MM-DD`, `--avanzar [N]`, `--real` ([F0003](F0003-flujos-aws-datos.md)) |
+| `python -m db athena …` | Capa S3 + Athena: `publicar`, `exportar`, `verificar`, `consultar` ([F0003](F0003-flujos-aws-datos.md)) |
 
 Opciones: `--url` para indicar la conexión en el comando, `--datos <carpeta>` para cargar desde otra carpeta de CSV (por defecto `HLF_DATA_DIR`) y `--esquema` en `esquema`, `permisos` y `borrar`.
 
@@ -319,8 +321,8 @@ Fuera de `localhost` la conexión exige SSL. Las claves nunca se imprimen ni se 
 - **Repetible:** `restaurar` se puede correr cuantas veces haga falta y siempre deja el mismo resultado. La primera carga usa `COPY`. Las siguientes **sincronizan** por llave primaria contra tablas temporales: insertan lo nuevo, actualizan lo que cambió, borran lo que ya no está en los CSV e informan el resultado (`+insertadas ~actualizadas -borradas`).
 - **Validada por la base:** además de PK y FK, el DDL incluye `CHECK` sobre los valores permitidos (sexo, prioridad, severidad, estado, tipos de evento y medición), la coherencia `fallecido` ↔ `fecha_defuncion`, `cupos_usados ≤ capacidad_cupos` y `minutos_atencion_real` solo cuando `estado_cita = 'asistio'`. Todas pasan con el dataset actual.
 - **Trazable:** cada carga queda en `raw.carga_lote` con la fecha, la carpeta de origen, las filas por tabla y el sha256 de cada CSV.
-- **No borra datos ajenos:** `priorizacion` y `canal` referencian `raw` con llaves foráneas, así que `raw` nunca se vacía con `TRUNCATE`. Si una fila desaparece de los CSV y la app la usa (por ejemplo, una solicitud con decisiones clínicas), la carga falla, indica qué fila es y no borra nada.
-- **Borrado seguro:** `borrar` se niega a eliminar un esquema del que depende otro (`canal` → `priorizacion` → `raw`). Un `DROP SCHEMA … CASCADE` eliminaría en silencio las llaves foráneas y los triggers del esquema dependiente. Para borrar todo está `--esquema todos`.
+- **No borra datos ajenos:** `priorizacion`, `canal` y `consulta` referencian `raw` con llaves foráneas, así que `raw` nunca se vacía con `TRUNCATE`. Si una fila desaparece de los CSV y la app la usa (por ejemplo, una solicitud con decisiones clínicas), la carga falla, indica qué fila es y no borra nada.
+- **Borrado seguro:** `borrar` se niega a eliminar un esquema del que depende otro (`canal` y `consulta` → `priorizacion` → `raw`). Un `DROP SCHEMA … CASCADE` eliminaría en silencio las llaves foráneas y los triggers del esquema dependiente. Para borrar todo está `--esquema todos`.
 
 ### Probado
 
@@ -355,13 +357,15 @@ La integración tocará principalmente tres puntos del código:
 - `priorizacion/registro.py`: el backend del registro (hoy SQLite) migra a PostgreSQL, esquema `priorizacion`.
 - `priorizacion/config.py`: ya usa las variables de entorno `HLF_DATA_DIR` y `HLF_DB_PATH`. Se agrega una variable de conexión (por ejemplo `HLF_DATABASE_URL`) para conmutar entre local (CSV + SQLite) y AWS sin tocar la lógica del motor. **El modo local se mantiene como respaldo para la demo**, por si falla la red o AWS.
 
-## Esquemas de la app (priorizacion y canal)
+## Esquemas de la app (priorizacion, canal y consulta)
 
 Las tablas que hoy crea `priorizacion/registro.py` en SQLite tienen su DDL en `db/sql/priorizacion/`, con llaves foráneas hacia `raw`. Se suman la agenda futura y la estimación de espera. El canal del paciente (WhatsApp y voz con IA, mensajes y evidencia externa) va en `db/sql/canal/`. El modelo completo, con todas las columnas, está en [F0002](F0002-modelo-datos-canales.md).
 
-`python -m db restaurar` crea los tres esquemas en orden de dependencia y la verificación revisa que `priorizacion` y `canal` estén completos.
+El esquema `consulta` (Knowledge Bases y preguntas del equipo clínico) y el reloj de la demo se detallan en [F0003](F0003-flujos-aws-datos.md).
 
-Permisos: el rol de la aplicación (`hlf_app`) tiene **solo lectura** sobre `raw` y lectura y escritura sobre `priorizacion` y `canal`. Así la base misma garantiza que el sistema nunca modifica las fuentes. El asistente de IA (`hlf_asistente_ia`) solo lee vistas filtradas por el paciente verificado.
+`python -m db restaurar` crea los cuatro esquemas en orden de dependencia y la verificación revisa que `priorizacion`, `canal` y `consulta` estén completos.
+
+Permisos: el rol de la aplicación (`hlf_app`) tiene **solo lectura** sobre `raw` y lectura y escritura sobre `priorizacion` y `canal` (y lectura de `consulta`). Así la base misma garantiza que el sistema nunca modifica las fuentes. El asistente de IA (`hlf_asistente_ia`) solo lee vistas filtradas por el paciente verificado. Las Lambdas del flujo de consulta usan `hlf_preparacion_kb` y `hlf_consulta_ia`.
 
 ## Consideraciones AWS
 
