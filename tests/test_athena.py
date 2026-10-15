@@ -89,6 +89,7 @@ def _leer_parquet(datos: bytes):
 
 
 # -- Parquet ------------------------------------------------------------------------------------------
+@pytest.mark.datos
 def test_parquet_con_tipos_exactos():
     datos = carga.leer_todo(DATA_DIR)
     tablas = {t.nombre: t for t in carga.TABLAS}
@@ -110,6 +111,7 @@ def test_valor_que_no_cabe_exacto_falla():
 
 
 # -- S3 -----------------------------------------------------------------------------------------------
+@pytest.mark.datos
 def test_descargar_csv_verificados(tmp_path):
     s3 = S3Falso()
     athena.subir(s3, CFG, DATA_DIR, progreso=lambda *_: None)
@@ -119,6 +121,7 @@ def test_descargar_csv_verificados(tmp_path):
     assert carga.leer_todo(tmp_path / "dataset")["mediciones"] == carga.leer_todo(DATA_DIR)["mediciones"]
 
 
+@pytest.mark.datos
 def test_descargar_csv_alterado_no_deja_nada(tmp_path):
     s3 = S3Falso()
     athena.subir(s3, CFG, DATA_DIR, progreso=lambda *_: None)
@@ -128,6 +131,7 @@ def test_descargar_csv_alterado_no_deja_nada(tmp_path):
     assert not (tmp_path / "dataset").exists() or not any((tmp_path / "dataset").iterdir())
 
 
+@pytest.mark.datos
 def test_descargar_csv_manifiesto_incompleto(tmp_path):
     s3 = S3Falso()
     athena.subir(s3, CFG, DATA_DIR, progreso=lambda *_: None)
@@ -138,6 +142,7 @@ def test_descargar_csv_manifiesto_incompleto(tmp_path):
         athena.descargar_csv(s3, CFG, tmp_path / "dataset", progreso=lambda *_: None)
 
 
+@pytest.mark.datos
 def test_subir_es_idempotente():
     s3 = S3Falso()
     res = athena.subir(s3, CFG, DATA_DIR, progreso=lambda *_: None)
@@ -201,6 +206,7 @@ def test_consulta_fallida():
         athena.Athena(CFG, cliente).ejecutar("SELECT x FROM nada")
 
 
+@pytest.mark.datos
 def test_publicar_y_verificar_de_punta_a_punta():
     s3 = S3Falso()
     conteos = [(t.nombre, "bigint") for t in carga.TABLAS]
@@ -232,6 +238,7 @@ URL = os.environ.get("HLF_TEST_DATABASE_URL")
 
 
 @pytest.mark.skipif(not URL, reason="Define HLF_TEST_DATABASE_URL para probar contra PostgreSQL")
+@pytest.mark.datos
 def test_exportar_historial_particionado():
     from db import conexion, esquema
     with conexion.conectar(URL) as conn:

@@ -81,13 +81,16 @@ El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o 
 | Ver qué va a cambiar | `npx aws-cdk@2 diff -c entorno=demo` |
 | Ver logs del backend | `aws logs tail <SalidaGrupoLogs> --follow` |
 | Reiniciar el backend | `aws ecs update-service --cluster <SalidaCluster> --service <SalidaServicio> --force-new-deployment` |
-| Publicar un dataset nuevo | `python -m db athena publicar` y reiniciar el backend (descarga los CSV al arrancar) |
+| Sumar los datos de un periodo nuevo | Vista **Cargas** de la app (subir, vista previa, confirmar). Desde la línea de comandos, como tarea ECS: `python -m db cargar --incremental --periodo DESDE:HASTA --datos <carpeta> --confirmar` |
+| Reconstruir `raw` desde la historia completa | `python -m db restaurar` como tarea ECS (borra lo que no venga en los CSV publicados: solo para reconstruir) |
 | Probar los templates | `cd infra && python -m pytest tests -q` |
 | Destruir | `npx aws-cdk@2 destroy --all -c entorno=dev` (en `demo`, el bucket de datos y la RDS se conservan) |
 
 **Primer arranque del backend:** calcula la serie nocturna completa (unos 20 s en un portátil; puede ser varias veces más en Fargate con 1 vCPU). El health check espera 6 minutos antes de marcar la tarea como fallida.
 
-**Estado local (hasta F0005):** la API guarda las decisiones en SQLite dentro del contenedor. Se pierden al reiniciar o redesplegar. Por eso corre una sola tarea y el despliegue la reemplaza con un corte breve.
+**Dónde vive el estado (F0005):**
+- `demo` (con RDS): la API lee `raw` de la base y guarda decisiones, propuestas, serie y canal en `priorizacion` y `canal`. Sobrevive a reinicios y redespliegues. Corren **2 tareas** y el despliegue no tiene corte; las tareas se sincronizan por la versión que guarda la base. Al arrancar, la API **aplica las migraciones pendientes** (idempotentes, bajo un candado), así una versión nueva nunca corre sobre un esquema viejo.
+- `dev` (sin RDS): la API guarda en SQLite dentro del contenedor y se pierde al reiniciar. Corre una sola tarea con reemplazo con corte.
 
 ## Solución de problemas
 

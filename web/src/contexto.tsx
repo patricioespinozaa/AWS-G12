@@ -8,6 +8,8 @@ interface Estado {
   /** Aumenta cada vez que se guarda algo, para que las vistas vuelvan a pedir sus datos. */
   version: number;
   refrescar: () => void;
+  /** Vuelve a pedir /api/meta (tras una carga cambia la fecha de referencia). */
+  recargarMeta: () => void;
 }
 
 const Contexto = createContext<Estado | null>(null);
@@ -17,7 +19,7 @@ export function ProveedorApp({ children }: { children: ReactNode }) {
   const [corte, setCorteEstado] = useState<string>("");
   const [version, setVersion] = useState(0);
 
-  useEffect(() => {
+  const recargarMeta = useCallback(() => {
     getJSON<Meta>("/api/meta").then((m) => {
       setMeta(m);
       let guardado: string | null = null;
@@ -30,6 +32,8 @@ export function ProveedorApp({ children }: { children: ReactNode }) {
       setCorteEstado(valido ? guardado! : m.fecha_referencia);
     });
   }, []);
+
+  useEffect(recargarMeta, [recargarMeta]);
 
   const setCorte = useCallback(
     (f: string) => {
@@ -48,7 +52,7 @@ export function ProveedorApp({ children }: { children: ReactNode }) {
   const refrescar = useCallback(() => setVersion((v) => v + 1), []);
 
   return (
-    <Contexto.Provider value={{ meta, corte, setCorte, version, refrescar }}>{children}</Contexto.Provider>
+    <Contexto.Provider value={{ meta, corte, setCorte, version, refrescar, recargarMeta }}>{children}</Contexto.Provider>
   );
 }
 

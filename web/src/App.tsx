@@ -4,6 +4,7 @@ import { useApp } from "./contexto";
 import Agenda from "./paginas/Agenda";
 import Bandeja from "./paginas/Bandeja";
 import Canal from "./paginas/Canal";
+import Cargas from "./paginas/Cargas";
 import Ficha from "./paginas/Ficha";
 import Kpis from "./paginas/Kpis";
 import Nocturno from "./paginas/Nocturno";
@@ -50,7 +51,7 @@ export default function App() {
           </div>
         </div>
         <nav className="nav-grupo">
-          <span>Equipo clínico</span>
+          <span>Revisión</span>
           <NavLink to="/bandeja">📋 Bandeja priorizada</NavLink>
           <NavLink to="/ficha">🩺 Ficha del paciente</NavLink>
           <NavLink to="/agenda">🗓️ Agenda y box</NavLink>
@@ -63,12 +64,13 @@ export default function App() {
           <span>Gestión</span>
           <NavLink to="/kpis">📊 KPIs</NavLink>
           <NavLink to="/nocturno">🌙 Consolidación nocturna</NavLink>
+          <NavLink to="/cargas">📥 Cargas de datos</NavLink>
         </nav>
         <div className="principio">
-          La herramienta <b>propone y explica</b>; el equipo clínico <b>decide</b>.
+          La herramienta <b>propone y explica</b>; la Administradora <b>decide</b>.
           <br />
           La posición en la lista no equivale a una fecha garantizada de atención.
-          {meta && <><br /><br />Reglas <b>{meta.version_reglas}</b></>}
+          {meta && <><br /><br />Reglas <b>{meta.version_reglas}</b> · {meta.base_de_datos === "rds" ? "base de datos RDS" : "modo local"}<br />Usuaria: <b>{meta.usuaria}</b></>}
         </div>
       </aside>
       <main className="principal">
@@ -86,6 +88,7 @@ export default function App() {
               <Route path="/canal" element={<Canal />} />
               <Route path="/kpis" element={<Kpis />} />
               <Route path="/nocturno" element={<Nocturno />} />
+              <Route path="/cargas" element={<Cargas />} />
               <Route path="*" element={<Navigate to="/bandeja" replace />} />
             </Routes>
           )}

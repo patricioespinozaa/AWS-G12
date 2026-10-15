@@ -10,7 +10,7 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 | [F0002](F0002-modelo-datos-canales.md) | Modelo de datos de la app y de los canales del paciente | Hecha (DDL) | F0001 | RDS |
 | [F0003](F0003-flujos-aws-datos.md) | Estructura de datos de los flujos AWS: reloj, `consulta`, S3 + Athena | Hecha (probada en AWS) | F0002 | S3, Athena, Glue Data Catalog |
 | [F0004](F0004-despliegue-frontend-backend.md) | Despliegue del frontend y el backend en AWS | Hecha (desplegada en `demo`) | F0003 | CloudFront, S3, ECS Fargate, ALB, ECR, VPC, CDK |
-| [F0005](F0005-persistencia-app-rds.md) | La app usa RDS en vez de CSV + SQLite | Plan | F0004 | RDS, S3 |
+| [F0005](F0005-persistencia-app-rds.md) | La app usa RDS, con cargas de datos incrementales y versionadas | Hecha (desplegada en `demo`) | F0004 | RDS, S3 |
 | [F0006](F0006-proceso-nocturno-reloj.md) | Proceso nocturno y reloj de la demo en AWS | Plan | F0005 | EventBridge Scheduler, ECS (tarea programada), S3, Athena |
 | [F0007](F0007-autenticacion-roles.md) | Autenticación y roles del equipo clínico | Plan | F0004 | Cognito |
 | [F0008](F0008-explicaciones-bedrock.md) | Explicaciones con IA generativa conectadas a Bedrock | Plan | F0004 | Bedrock, Guardrails |

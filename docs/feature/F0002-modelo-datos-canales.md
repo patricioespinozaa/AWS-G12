@@ -7,6 +7,8 @@ Este documento define el modelo relacional completo del sistema sobre PostgreSQL
 
 DDL: `db/sql/priorizacion/` y `db/sql/canal/`, idempotentes. Se aplica con `python -m db esquema`.
 
+**Cambios posteriores ([F0005](F0005-persistencia-app-rds.md)):** `priorizacion.usuario.rol` admite `administracion` (única usuaria: `administradora`), la nueva tabla `priorizacion.estado_app` guarda el contador de versión compartido entre tareas, y `raw` agrega versiones (`carga_lote`), procedencia por fila (`id_carga_alta`, `id_carga_modificacion`) e historial (`raw.cambio_fila`).
+
 El esquema `consulta` (preguntas del equipo clínico y documentos de la Knowledge Base), el reloj de la demo y la capa S3 + Athena se describen en [F0003](F0003-flujos-aws-datos.md), que ubica cada tabla en los flujos de [docs/diagramas/flujos-aws.pdf](../diagramas/flujos-aws.pdf).
 
 ## Principios que el modelo hace cumplir
