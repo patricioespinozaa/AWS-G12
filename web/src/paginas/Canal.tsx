@@ -178,13 +178,12 @@ function FormSintomas({ onEnviar }: { onEnviar: (alarma: boolean, detalle: strin
 function Validacion() {
   const { corte, version, refrescar } = useApp();
   const { data, error } = useApi<{ evidencias: Registro[]; alarmas: Registro[] }>("/api/canal-pendientes", version);
-  const [revisor, setRevisor] = useState("tens.turno_noche");
   const [resultados, setResultados] = useState<Registro[]>([]);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const revisar = async (tipo: "evidencias" | "mensajes", id: string, estado: "validada" | "rechazada", nombre: string) => {
     setOcupado(id);
     try {
-      const r = await postJSON<Registro>(`/api/canal/${tipo}/${id}/revision`, { estado, revisado_por: revisor, corte });
+      const r = await postJSON<Registro>(`/api/canal/${tipo}/${id}/revision`, { estado, corte });
       setResultados([{ ...r, id, estado, nombre }, ...resultados]);
       refrescar();
     } finally {
@@ -195,8 +194,7 @@ function Validacion() {
     <div className="pila">
       <div className="tarjeta pila">
         <h2>Bandeja de validación</h2>
-        <p className="suave">TENS o enfermería, con protocolo: no hace falta el especialista. Al validar, el dato entra a la ficha consolidada y la prioridad del paciente se reevalúa de inmediato.</p>
-        <label className="campo"><span>Profesional que revisa</span><input value={revisor} onChange={(e) => setRevisor(e.target.value)} /></label>
+        <p className="suave">La Administradora valida lo que envía el paciente. Al validar, el dato entra a la ficha consolidada y la prioridad del paciente se reevalúa de inmediato.</p>
         {error && <Aviso tipo="error">{error}</Aviso>}
         {!data ? <Cargando /> : data.evidencias.length + data.alarmas.length === 0 ? (
           <Aviso tipo="info">No hay evidencia pendiente. Envía un examen o un síntoma desde el teléfono de la izquierda.</Aviso>

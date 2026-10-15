@@ -1,4 +1,8 @@
-"""Registro persistente (SQLite en el MVP; RDS/DynamoDB en AWS).
+"""Registro persistente: lo que genera la app (propuestas, decisiones, serie nocturna, canal del paciente).
+
+Dos implementaciones con la misma interfaz (`Registro`), elegidas con `crear_registro()` (docs/feature/F0005):
+- RegistroSQLite: modo local, respaldo de la demo (este archivo).
+- RegistroPostgres: RDS, esquemas priorizacion y canal (registro_postgres.py).
 
 Tablas del sistema, separadas de los datos fuente (que nunca se modifican):
 - serie_nocturna: resultado de cada corrida nocturna, por solicitud y noche.
@@ -11,14 +15,19 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
 import pandas as pd
 
 from . import config
 from .motor import Decision, Resultado
+
+if TYPE_CHECKING:
+    from .archivos import ArchivoGuardado
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS serie_nocturna (
@@ -71,7 +80,49 @@ CREATE TABLE IF NOT EXISTS corrida_nocturna (
 """
 
 
-class Registro:
+class Registro(Protocol):
+    """Lo que la API y el motor necesitan del registro. Los DataFrames tienen las mismas columnas y tipos en
+    ambas implementaciones (fechas como texto ISO), para que el resto del código no distinga una de otra."""
+
+    def version(self) -> str: ...
+    def conexion(self): ...
+    def candado(self, nombre: str): ...
+    def reemplazar_serie(self, serie: pd.DataFrame, especialidad: str | None = None): ...
+    def serie(self, id_solicitud: str | None = None, especialidad: str | None = None) -> pd.DataFrame: ...
+    def serie_resumen(self) -> pd.DataFrame: ...
+    def hay_serie(self) -> bool: ...
+    def guardar_propuesta(self, r: Resultado, huella: str, explicacion: str, fuente_explicacion: str,
+                          origen: str, con=None) -> int: ...
+    def borrar_propuestas_nocturnas(self, id_solicitud: str | None = None, con=None): ...
+    def propuestas(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
+    def factores(self, id_propuesta: int) -> pd.DataFrame: ...
+    def registrar_decision(self, id_propuesta: int, r: Resultado, decision: str, prioridad_final: str,
+                           motivo: str, usuario: str) -> int: ...
+    def decisiones(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
+    def decisiones_por_solicitud(self) -> dict[str, list[Decision]]: ...
+    def agregar_evidencia(self, id_paciente: str, fecha_examen: date, tipo: str, valor: float, lugar: str,
+                          archivo: "ArchivoGuardado | None", fecha_recepcion: date) -> str: ...
+    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str): ...
+    def evidencias(self) -> pd.DataFrame: ...
+    def agregar_mensaje(self, id_paciente: str, fecha: date, tipo: str, detalle: str) -> str: ...
+    def revisar_mensaje(self, id_mensaje: str, estado: str, revisado_por: str): ...
+    def mensajes(self) -> pd.DataFrame: ...
+    def registrar_corrida(self, **kw): ...
+    def corridas(self) -> pd.DataFrame: ...
+
+
+def crear_registro() -> Registro:
+    """RegistroPostgres si hay RDS configurada (HLF_DATABASE_URL o HLF_DB_SECRET_ID); si no, SQLite local."""
+    if config.usa_rds():
+        from .registro_postgres import RegistroPostgres
+        return RegistroPostgres()
+    return RegistroSQLite()
+
+
+_CANDADOS: dict[str, threading.Lock] = {}
+
+
+class RegistroSQLite:
     def __init__(self, ruta: Path = config.DB_PATH):
         self.ruta = Path(ruta)
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -86,6 +137,13 @@ class Registro:
             con.commit()
         finally:
             con.close()
+
+    @contextmanager
+    def candado(self, nombre: str):
+        """Exclusión mutua (en SQLite solo hay un proceso: basta un candado de hilo)."""
+        candado = _CANDADOS.setdefault(nombre, threading.Lock())
+        with candado:
+            yield
 
     def consulta(self, sql: str, params=()) -> pd.DataFrame:
         with self.conexion() as c:
@@ -199,11 +257,11 @@ class Registro:
         return f"{prefijo}-{n:05d}"
 
     def agregar_evidencia(self, id_paciente: str, fecha_examen: date, tipo: str, valor: float, lugar: str,
-                          archivo: str | None, fecha_recepcion: date) -> str:
+                          archivo: "ArchivoGuardado | None", fecha_recepcion: date) -> str:
         with self.conexion() as c:
             ide = self._siguiente_id(c, "evidencia_externa", "id_evidencia", "EXT")
             c.execute("INSERT INTO evidencia_externa VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                      (ide, id_paciente, fecha_examen.isoformat(), tipo, valor, lugar, archivo,
+                      (ide, id_paciente, fecha_examen.isoformat(), tipo, valor, lugar, archivo.uri if archivo else None,
                        fecha_recepcion.isoformat(), "pendiente", None, None, None))
             return ide
 

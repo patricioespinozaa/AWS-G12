@@ -1,8 +1,11 @@
 """Backend: la API FastAPI en ECS Fargate detrás de un ALB interno (solo CloudFront llega a él).
 
 La imagen se construye desde docker/backend/Dockerfile al desplegar (requiere Docker en la máquina o en CI).
-Hasta F0005 la API guarda estado en memoria y en SQLite: corre una sola tarea y el despliegue la reemplaza
-con corte (min_healthy_percent=0), para que nunca haya dos versiones escribiendo a la vez.
+- Con RDS (entorno demo, F0005): el estado vive en la base, así que corren 2 tareas y el despliegue no tiene
+  corte (las nuevas arrancan antes de que se detengan las anteriores). Las tareas se sincronizan por la versión
+  que guarda la base.
+- Sin RDS (dev): la API guarda estado en SQLite dentro del contenedor; corre una sola tarea y el despliegue la
+  reemplaza con corte, para que nunca haya dos copias escribiendo.
 """
 from __future__ import annotations
 
@@ -74,16 +77,20 @@ class BackendStack(Stack):
             port_mappings=[ecs.PortMapping(container_port=8000)],
             logging=ecs.LogDrivers.aws_logs(stream_prefix="api", log_group=grupo_logs),
         )
-        # Solo lectura y solo bajo el prefijo del proyecto (CSV publicados y manifiesto)
+        # Lectura del prefijo del proyecto (CSV publicados, manifiesto, originales de las cargas) y escritura solo
+        # donde la app guarda archivos: exámenes del canal y CSV de las cargas por periodo (F0005)
         datos.bucket.grant_read(tarea.task_role, f"{entorno.prefijo_s3}/*")
+        for prefijo in ("canal/evidencias", "cargas"):
+            datos.bucket.grant_put(tarea.task_role, f"{entorno.prefijo_s3}/{prefijo}/*")
+        con_estado_en_base = datos.rds is not None
 
         servicio = ecs.FargateService(
             self, "Servicio",
             cluster=cluster,
             task_definition=tarea,
-            desired_count=1,
-            min_healthy_percent=0,
-            max_healthy_percent=100,
+            desired_count=2 if con_estado_en_base else 1,
+            min_healthy_percent=100 if con_estado_en_base else 0,
+            max_healthy_percent=200 if con_estado_en_base else 100,
             assign_public_ip=red.ip_publica_backend,
             vpc_subnets=red.subredes_backend,
             security_groups=[red.sg_backend],

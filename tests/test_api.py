@@ -2,6 +2,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+pytestmark = pytest.mark.datos   # la API carga el dataset al importarse
+
 
 @pytest.fixture(scope="module")
 def cliente():
