@@ -5,7 +5,9 @@ Este documento define el modelo relacional completo del sistema sobre PostgreSQL
 - **`priorizacion`**: lo que hoy guarda la app en SQLite (`priorizacion/registro.py`), ahora con llaves foráneas hacia `raw`. Suma la **agenda futura** y la **estimación de espera**, que el canal del paciente necesita para responder.
 - **`canal`**: la comunicación con el paciente. **WhatsApp** y **teléfono con asistente de IA (voz)** comparten el mismo modelo. El paciente puede preguntar su prioridad y su posición en la lista, el tiempo estimado de atención, sus citas pasadas y próximas, y qué registros clínicos tiene el hospital.
 
-DDL: `db/sql/priorizacion/` y `db/sql/canal/`, idempotentes. Se aplica con `python -m db esquema --esquema todos`.
+DDL: `db/sql/priorizacion/` y `db/sql/canal/`, idempotentes. Se aplica con `python -m db esquema`.
+
+El esquema `consulta` (preguntas del equipo clínico y documentos de la Knowledge Base), el reloj de la demo y la capa S3 + Athena se describen en [F0003](F0003-flujos-aws-datos.md), que ubica cada tabla en los flujos de [docs/diagramas/flujos-aws.pdf](../diagramas/flujos-aws.pdf).
 
 ## Principios que el modelo hace cumplir
 
@@ -36,21 +38,17 @@ DDL: `db/sql/priorizacion/` y `db/sql/canal/`, idempotentes. Se aplica con `pyth
 
 ## Diagrama general
 
-Relaciones entre las tablas de los tres esquemas. Cada entidad lleva el prefijo de su esquema y cada relación indica la columna de la llave foránea. `||` es obligatoria y `|o` opcional (la FK admite NULL). Las columnas de cada tabla están en el diagrama de su esquema: [raw](#esquema-raw), [priorizacion](#esquema-priorizacion) y [canal](#esquema-canal).
+Relaciones entre las tablas de los cuatro esquemas de RDS. Cada entidad lleva el prefijo de su esquema y cada relación indica la columna de la llave foránea. `||` es obligatoria y `|o` opcional (la FK admite NULL). Las columnas de cada tabla están en el diagrama de su esquema: [raw](#esquema-raw), [priorizacion](#esquema-priorizacion), [canal](#esquema-canal) y [consulta](F0003-flujos-aws-datos.md#esquema-consulta).
 
 ```mermaid
 erDiagram
+    raw_pacientes ||--o{ raw_lista_espera : "id_paciente"
     raw_pacientes ||--o{ raw_eventos_clinicos : "id_paciente"
     raw_pacientes ||--o{ raw_mediciones : "id_paciente"
     raw_box ||--o{ raw_agenda_box : "id_box"
     raw_pacientes ||--o{ raw_citaciones : "id_paciente"
     raw_box ||--o{ raw_citaciones : "id_box"
-    raw_pacientes ||--o{ canal_evidencia_externa : "id_paciente"
-    canal_conversacion |o--o{ canal_evidencia_externa : "id_conversacion"
-    priorizacion_usuario |o--o{ canal_evidencia_externa : "revisado_por"
-    raw_pacientes ||--o{ raw_lista_espera : "id_paciente"
-    priorizacion_cita_agendada |o--o{ priorizacion_cita_agendada : "id_cita_anterior"
-    priorizacion_usuario ||--o{ priorizacion_cita_agendada : "agendado_por"
+    priorizacion_usuario ||--o{ priorizacion_reloj : "actualizado_por"
     raw_lista_espera ||--o{ priorizacion_serie_nocturna : "id_solicitud"
     priorizacion_corrida_nocturna |o--o{ priorizacion_serie_nocturna : "id_corrida"
     raw_lista_espera ||--o{ priorizacion_propuesta_prioridad : "id_solicitud"
@@ -60,6 +58,8 @@ erDiagram
     priorizacion_propuesta_prioridad ||--o{ priorizacion_decision_clinica : "id_propuesta, id_solicitud"
     raw_lista_espera ||--o{ priorizacion_cita_agendada : "id_solicitud"
     raw_box ||--o{ priorizacion_cita_agendada : "id_box"
+    priorizacion_cita_agendada |o--o{ priorizacion_cita_agendada : "id_cita_anterior"
+    priorizacion_usuario ||--o{ priorizacion_cita_agendada : "agendado_por"
     raw_lista_espera ||--o{ priorizacion_estimacion_espera : "id_solicitud"
     priorizacion_corrida_nocturna |o--o{ priorizacion_estimacion_espera : "id_corrida"
     raw_pacientes ||--o{ canal_contacto_paciente : "id_paciente"
@@ -79,11 +79,20 @@ erDiagram
     raw_pacientes ||--o{ canal_mensaje_paciente : "id_paciente"
     canal_conversacion |o--o{ canal_mensaje_paciente : "id_conversacion"
     priorizacion_usuario |o--o{ canal_mensaje_paciente : "revisado_por"
+    raw_pacientes ||--o{ canal_evidencia_externa : "id_paciente"
+    canal_conversacion |o--o{ canal_evidencia_externa : "id_conversacion"
+    priorizacion_usuario |o--o{ canal_evidencia_externa : "revisado_por"
     raw_pacientes ||--o{ canal_notificacion : "id_paciente"
     canal_contacto_paciente ||--o{ canal_notificacion : "id_contacto"
     priorizacion_cita_agendada |o--o{ canal_notificacion : "id_cita_agendada"
     canal_conversacion |o--o{ canal_notificacion : "id_conversacion"
     priorizacion_usuario ||--o{ canal_notificacion : "creada_por"
+    consulta_ingesta_kb ||--o{ consulta_documento_kb : "id_ingesta"
+    raw_pacientes |o--o{ consulta_documento_kb : "id_paciente"
+    priorizacion_usuario ||--o{ consulta_pregunta : "id_usuario"
+    consulta_ingesta_kb |o--o{ consulta_pregunta : "id_ingesta"
+    consulta_pregunta ||--o{ consulta_fuente_respuesta : "id_pregunta"
+    consulta_documento_kb ||--o{ consulta_fuente_respuesta : "id_documento"
 ```
 
 ## Esquema `raw`
@@ -94,12 +103,12 @@ Datos crudos del HLF, de solo lectura para la app. Viene de [F0001](F0001-subida
 
 ```mermaid
 erDiagram
+    pacientes ||--o{ lista_espera : "id_paciente"
     pacientes ||--o{ eventos_clinicos : "id_paciente"
     pacientes ||--o{ mediciones : "id_paciente"
     box ||--o{ agenda_box : "id_box"
     pacientes ||--o{ citaciones : "id_paciente"
     box ||--o{ citaciones : "id_box"
-    pacientes ||--o{ lista_espera : "id_paciente"
     pacientes {
         text id_paciente PK
         text nombre_fantasia
@@ -299,6 +308,7 @@ Una carga del esquema raw: filas por tabla y sha256 de cada CSV.
 | Tabla | Grano (1 fila =) | Llave | Origen |
 |---|---|---|---|
 | usuario | una persona o proceso que decide o revisa | PK `id_usuario` | Nueva. Reemplaza `usuario`/`revisado_por` en texto libre |
+| reloj | la fecha de corte vigente (una sola fila) | PK `id` (siempre 1) | **Nueva**. Modo real o demo; ver [F0003](F0003-flujos-aws-datos.md#reloj-de-la-demo-flujo-d) |
 | corrida_nocturna | una ejecución del proceso nocturno | PK `id_corrida` (identity) | `registro.py` |
 | serie_nocturna | una solicitud en una noche | PK (`id_solicitud`, `fecha`), particionada por `fecha` | `registro.py`, sin `especialidad` ni `prioridad_inicial` (se obtienen de `raw`) |
 | propuesta_prioridad | una propuesta del motor | PK `id_propuesta` (identity) | `registro.py`, sin `id_paciente` (se obtiene de `raw`) |
@@ -306,7 +316,7 @@ Una carga del esquema raw: filas por tabla y sha256 de cada CSV.
 | decision_clinica | una decisión del equipo clínico | PK `id_decision`, FK compuesta a la propuesta | `registro.py`. Solo inserciones |
 | cita_agendada | una cita agendada desde la app | PK `id_cita_agendada` | **Nueva**. `raw.citaciones` es solo histórico, sin citas futuras |
 | estimacion_espera | el rango de espera de una solicitud en un día | PK (`id_solicitud`, `fecha_calculo`) | **Nueva**. La calcula el proceso nocturno |
-| v_prioridad_vigente (vista) | una solicitud | — | Última decisión clínica o, si no hay, la prioridad inicial |
+| v_prioridad_vigente (vista) | una solicitud | — | Última decisión clínica hasta la fecha de corte o, si no hay, la prioridad inicial |
 
 `cita_agendada` tiene un índice único parcial: un box no puede tener dos citas activas a la misma hora.
 
@@ -314,8 +324,7 @@ Una carga del esquema raw: filas por tabla y sha256 de cada CSV.
 
 ```mermaid
 erDiagram
-    cita_agendada |o--o{ cita_agendada : "id_cita_anterior"
-    usuario ||--o{ cita_agendada : "agendado_por"
+    usuario ||--o{ reloj : "actualizado_por"
     raw_lista_espera ||--o{ serie_nocturna : "id_solicitud"
     corrida_nocturna |o--o{ serie_nocturna : "id_corrida"
     raw_lista_espera ||--o{ propuesta_prioridad : "id_solicitud"
@@ -325,6 +334,8 @@ erDiagram
     propuesta_prioridad ||--o{ decision_clinica : "id_propuesta, id_solicitud"
     raw_lista_espera ||--o{ cita_agendada : "id_solicitud"
     raw_box ||--o{ cita_agendada : "id_box"
+    cita_agendada |o--o{ cita_agendada : "id_cita_anterior"
+    usuario ||--o{ cita_agendada : "agendado_por"
     raw_lista_espera ||--o{ estimacion_espera : "id_solicitud"
     corrida_nocturna |o--o{ estimacion_espera : "id_corrida"
     usuario {
@@ -334,6 +345,14 @@ erDiagram
         text especialidad
         bool activo
         timestamptz creado_en
+    }
+    reloj {
+        smallint id PK
+        text modo
+        date fecha_demo
+        smallint dias_por_tick
+        timestamptz actualizado_en
+        text actualizado_por FK
     }
     corrida_nocturna {
         bigint id_corrida PK
@@ -460,6 +479,21 @@ Quién decide o revisa. Las columnas *_por de todo el modelo apuntan aquí.
 | especialidad | text | sí |  | Especialidad a la que pertenece; NULL = todas |
 | activo | boolean | no |  | false = ya no puede decidir ni revisar. Por defecto: `true` |
 | creado_en | timestamp with time zone | no |  | Alta del usuario. Por defecto: `now()` |
+
+#### `priorizacion.reloj`
+
+Fecha de corte vigente (real o simulada para la demo). Una sola fila.
+
+| Columna | Tipo | Nulo | Llave | Descripción |
+|---|---|---|---|---|
+| id | smallint | no | PK | Siempre 1: la tabla tiene una sola fila. Por defecto: `1` |
+| modo | text | no |  | `real` = hoy; `demo` = fecha simulada. Valores: `real`, `demo` |
+| fecha_demo | date | sí |  | Fecha simulada; obligatoria en modo demo |
+| dias_por_tick | smallint | no |  | Días que avanza cada tick de la demo. Regla: > 0. Por defecto: `1` |
+| actualizado_en | timestamp with time zone | no |  | Último cambio. Por defecto: `now()` |
+| actualizado_por | text | no | FK | Quién lo cambió (`sistema` si fue la Lambda) → `priorizacion.usuario` |
+
+**Reglas:** Una sola fila (`id` = 1); Modo `demo` exige `fecha_demo`; Se lee con `priorizacion.fecha_corte()` y se avanza con `priorizacion.avanzar_reloj(dias)`.
 
 #### `priorizacion.corrida_nocturna`
 
@@ -611,7 +645,7 @@ Rango de días estimado para ser atendido, por solicitud y día. Solo las public
 
 #### `priorizacion.v_prioridad_vigente` (vista)
 
-Prioridad que rige hoy por solicitud: última decisión clínica o, si no hay, la inicial.
+Prioridad que rige a la fecha de corte: última decisión clínica hasta esa fecha o, si no hay, la inicial.
 
 | Columna | Tipo |
 |---|---|
@@ -644,9 +678,6 @@ Prioridad que rige hoy por solicitud: última decisión clínica o, si no hay, l
 
 ```mermaid
 erDiagram
-    raw_pacientes ||--o{ evidencia_externa : "id_paciente"
-    conversacion |o--o{ evidencia_externa : "id_conversacion"
-    priorizacion_usuario |o--o{ evidencia_externa : "revisado_por"
     raw_pacientes ||--o{ contacto_paciente : "id_paciente"
     raw_pacientes ||--o{ consentimiento : "id_paciente"
     priorizacion_usuario ||--o{ consentimiento : "registrado_por"
@@ -664,6 +695,9 @@ erDiagram
     raw_pacientes ||--o{ mensaje_paciente : "id_paciente"
     conversacion |o--o{ mensaje_paciente : "id_conversacion"
     priorizacion_usuario |o--o{ mensaje_paciente : "revisado_por"
+    raw_pacientes ||--o{ evidencia_externa : "id_paciente"
+    conversacion |o--o{ evidencia_externa : "id_conversacion"
+    priorizacion_usuario |o--o{ evidencia_externa : "revisado_por"
     raw_pacientes ||--o{ notificacion : "id_paciente"
     contacto_paciente ||--o{ notificacion : "id_contacto"
     priorizacion_cita_agendada |o--o{ notificacion : "id_cita_agendada"
@@ -1051,7 +1085,7 @@ Estado actual de cada consentimiento (última fila por paciente, canal y finalid
 
 #### `canal.v_ia_estado_solicitud` (vista)
 
-Asistente, verificación reforzada: prioridad vigente, posición y rango estimado.
+Asistente, verificación reforzada: prioridad vigente, posición y rango estimado, a la fecha de corte.
 
 | Columna | Tipo |
 |---|---|
@@ -1069,10 +1103,11 @@ Asistente, verificación reforzada: prioridad vigente, posición y rango estimad
 | dias_estimados_max | int |
 | confianza_estimacion | text |
 | fecha_estimacion | date |
+| fecha_corte | date |
 
 #### `canal.v_ia_citas` (vista)
 
-Asistente, verificación básica: citas próximas y pasadas.
+Asistente, verificación básica: citas próximas y pasadas, a la fecha de corte.
 
 | Columna | Tipo |
 |---|---|
@@ -1088,7 +1123,7 @@ Asistente, verificación básica: citas próximas y pasadas.
 
 #### `canal.v_ia_registros` (vista)
 
-Asistente, verificación reforzada: eventos, mediciones y exámenes externos validados.
+Asistente, verificación reforzada: eventos, mediciones y exámenes externos validados hasta la fecha de corte.
 
 | Columna | Tipo |
 |---|---|
@@ -1110,6 +1145,8 @@ Asistente, verificación reforzada: eventos, mediciones y exámenes externos val
 | "¿Cuánto me falta?" | `v_ia_estado_solicitud` | reforzada | Rango de días estimado, solo si hay una estimación publicable |
 | "¿Tengo hora? ¿Cuándo fue mi última cita?" | `v_ia_citas` | básica | Citas próximas (`cita_agendada`) y pasadas (`cita_agendada` y `raw.citaciones`) |
 | "¿Qué exámenes o registros tienen de mí?" | `v_ia_registros` | reforzada | Eventos, mediciones y exámenes externos validados. Los marcados `sensible` (hospitalización, evento grave, PHQ-9) no se leen en voz alta: se ofrece derivar a una persona |
+
+**Fecha de corte:** las tres vistas usan `priorizacion.fecha_corte()`. Con el reloj en modo demo no informan nada posterior a esa fecha. Una cita histórica posterior al corte aparece como próxima y `programada`, porque a esa fecha su resultado aún no se conoce.
 
 **Cómo se filtra por paciente:** después de verificar la identidad, el backend del asistente ejecuta `SET LOCAL canal.id_conversacion = '<id>'` en cada transacción. La función `canal.paciente_verificado(nivel)` devuelve el paciente solo si esa conversación está **en curso** y verificada al nivel que se pide. Sin eso, las vistas no devuelven filas. Un error de lógica del bot no puede mezclar datos de dos pacientes, y no se puede leer nada sin una verificación registrada.
 
@@ -1199,13 +1236,20 @@ Se crean con `python -m db permisos --esquema todos`.
 ## Comandos
 
 ```bash
-python -m db esquema --esquema todos     # raw → priorizacion → canal (idempotente)
-python -m db permisos --esquema todos    # roles hlf_lectura_raw, hlf_app, hlf_asistente_ia
+python -m db restaurar                       # raw → priorizacion → canal, carga o sincroniza raw y verifica todo
+python -m db esquema                         # solo crea los esquemas que falten (idempotente)
+python -m db permisos                        # roles hlf_lectura_raw, hlf_app, hlf_asistente_ia
+python -m db verificar                       # incluye tablas, vistas, FKs, triggers y catálogos de priorizacion y canal
+python -m db borrar --esquema canal --confirmar   # borra un esquema; raw se niega mientras existan los otros
 ```
+
+`--esquema` acepta `raw`, `priorizacion`, `canal` o `todos` (el valor por defecto en `esquema` y `permisos`).
+
+**Recarga de `raw` con datos de la app:** `restaurar` no usa `TRUNCATE`, porque PostgreSQL lo rechaza en tablas referenciadas. En su lugar, sincroniza `raw` con los CSV por llave primaria. Si una fila que la app referencia desaparece del CSV, la carga falla sin cambiar nada (detalle en [F0001](F0001-subida-datos-aws.md#garantías-de-la-carga)).
 
 ## Probado
 
-Contra PostgreSQL 16 local: carga de `raw`, aplicación de los tres esquemas dos veces seguidas (idempotencia) y 27 casos de comportamiento. Entre ellos:
+`tests/test_db.py`, contra PostgreSQL 16 local: los tres esquemas aplicados dos veces (idempotencia), la recarga con datos de la app, el borrado seguro, la verificación que detecta una FK perdida y las reglas del modelo. Antes, un script de prueba revisó 27 casos de comportamiento. Entre ellos:
 
 - Se rechazan las decisiones incoherentes, las que apuntan a la propuesta de otra solicitud y las que no tienen un usuario registrado.
 - Se rechazan las ediciones de tablas de auditoría, la doble agenda de un box y una alarma marcada como `registrado` sin revisión.
@@ -1214,7 +1258,7 @@ Contra PostgreSQL 16 local: carga de `raw`, aplicación de los tres esquemas dos
 
 ## Pendientes / decisiones abiertas
 
-- **`python -m db restaurar` deja de funcionar cuando hay datos en `priorizacion` o `canal`.** `carga.py` hace `TRUNCATE` de `raw` sin `CASCADE` a propósito, para no borrar datos de la app, y PostgreSQL rechaza vaciar tablas referenciadas por FKs. Hay que decidir entre una recarga incremental (`INSERT … ON CONFLICT`) o borrar y recrear todos los esquemas en orden.
+- ~~`python -m db restaurar` deja de funcionar cuando hay datos en `priorizacion` o `canal`~~: **resuelto** con la recarga sincronizada por llave primaria (`INSERT … ON CONFLICT` + borrado de ausentes).
 - **Migrar `registro.py` a PostgreSQL** con estas tablas. Hoy sigue en SQLite: el modelo está listo, pero la app aún no lo usa.
 - **Método de `estimacion_espera`**: propuesta inicial basada en las atenciones por especialidad en las últimas 8 semanas, con el rango del p25 al p75. `publicable` arranca en `false` hasta que gestión de lista lo apruebe.
 - **Particiones de `serie_nocturna`**: hoy solo existe la partición `DEFAULT`. Crear particiones anuales o mensuales antes de cargar datos reales.
