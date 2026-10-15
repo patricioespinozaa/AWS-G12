@@ -36,6 +36,38 @@ INSERT INTO priorizacion.usuario (id_usuario, nombre, rol) VALUES
     ('asistente_ia', 'Asistente virtual (WhatsApp y voz)', 'sistema')
 ON CONFLICT (id_usuario) DO NOTHING;
 
+-- Reloj: la fecha de corte que usa toda la base -------------------------------------------------------
+-- modo 'real' = hoy. modo 'demo' = una fecha simulada que EventBridge Scheduler avanza (flujo D), para que la
+-- posición en la cola cambie a medida que "pasa el tiempo". Una sola fila (id = 1).
+CREATE TABLE IF NOT EXISTS priorizacion.reloj (
+    id             smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    modo           text NOT NULL CHECK (modo IN ('real', 'demo')),
+    fecha_demo     date,
+    dias_por_tick  smallint NOT NULL DEFAULT 1 CHECK (dias_por_tick > 0),
+    actualizado_en timestamptz NOT NULL DEFAULT now(),
+    actualizado_por text NOT NULL REFERENCES priorizacion.usuario (id_usuario),
+    CONSTRAINT reloj_demo_con_fecha CHECK (modo = 'real' OR fecha_demo IS NOT NULL)
+);
+COMMENT ON TABLE priorizacion.reloj IS 'Fecha de corte vigente (real o simulada para la demo). Una sola fila';
+INSERT INTO priorizacion.reloj (id, modo, actualizado_por) VALUES (1, 'real', 'sistema') ON CONFLICT (id) DO NOTHING;
+
+-- SECURITY DEFINER: las vistas del asistente la usan sin que su rol pueda leer priorizacion
+CREATE OR REPLACE FUNCTION priorizacion.fecha_corte() RETURNS date
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
+    SELECT coalesce((SELECT CASE WHEN modo = 'demo' THEN fecha_demo ELSE current_date END
+                     FROM priorizacion.reloj WHERE id = 1), current_date)
+$$;
+COMMENT ON FUNCTION priorizacion.fecha_corte() IS 'Hoy, o la fecha simulada si el reloj está en modo demo';
+
+-- La llama la Lambda del reloj de la demo en cada tick. En modo real no hace nada y devuelve NULL.
+CREATE OR REPLACE FUNCTION priorizacion.avanzar_reloj(p_dias integer DEFAULT NULL, p_usuario text DEFAULT 'sistema')
+RETURNS date LANGUAGE sql AS $$
+    UPDATE priorizacion.reloj
+    SET fecha_demo = fecha_demo + coalesce(p_dias, dias_por_tick), actualizado_en = now(), actualizado_por = p_usuario
+    WHERE id = 1 AND modo = 'demo'
+    RETURNING fecha_demo
+$$;
+
 -- Proceso nocturno --------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS priorizacion.corrida_nocturna (
     id_corrida     bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -145,7 +177,7 @@ DROP TRIGGER IF EXISTS decision_clinica_solo_insercion ON priorizacion.decision_
 CREATE TRIGGER decision_clinica_solo_insercion BEFORE UPDATE OR DELETE ON priorizacion.decision_clinica
     FOR EACH ROW EXECUTE FUNCTION priorizacion.solo_insercion();
 
--- Prioridad vigente: última decisión clínica o, si no hay, la inicial del HLF
+-- Prioridad vigente a la fecha de corte: última decisión clínica hasta esa fecha o, si no hay, la inicial del HLF
 CREATE OR REPLACE VIEW priorizacion.v_prioridad_vigente AS
 SELECT le.id_solicitud,
        le.id_paciente,
@@ -159,7 +191,7 @@ FROM raw.lista_espera le
 LEFT JOIN LATERAL (
     SELECT dc.prioridad_final, dc.fecha_corte
     FROM priorizacion.decision_clinica dc
-    WHERE dc.id_solicitud = le.id_solicitud
+    WHERE dc.id_solicitud = le.id_solicitud AND dc.fecha_corte <= priorizacion.fecha_corte()
     ORDER BY dc.fecha_corte DESC, dc.id_decision DESC
     LIMIT 1
 ) d ON true;
