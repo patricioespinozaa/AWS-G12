@@ -1236,14 +1236,14 @@ Se crean con `python -m db permisos --esquema todos`.
 ## Comandos
 
 ```bash
-python -m db restaurar                       # raw → priorizacion → canal, carga o sincroniza raw y verifica todo
+python -m db restaurar                       # raw → priorizacion → canal y consulta, carga o sincroniza raw y verifica todo
 python -m db esquema                         # solo crea los esquemas que falten (idempotente)
 python -m db permisos                        # roles hlf_lectura_raw, hlf_app, hlf_asistente_ia
-python -m db verificar                       # incluye tablas, vistas, FKs, triggers y catálogos de priorizacion y canal
+python -m db verificar                       # incluye tablas, vistas, FKs, triggers y catálogos de priorizacion, canal y consulta
 python -m db borrar --esquema canal --confirmar   # borra un esquema; raw se niega mientras existan los otros
 ```
 
-`--esquema` acepta `raw`, `priorizacion`, `canal` o `todos` (el valor por defecto en `esquema` y `permisos`).
+`--esquema` acepta `raw`, `priorizacion`, `canal`, `consulta` o `todos` (el valor por defecto en `esquema` y `permisos`).
 
 **Recarga de `raw` con datos de la app:** `restaurar` no usa `TRUNCATE`, porque PostgreSQL lo rechaza en tablas referenciadas. En su lugar, sincroniza `raw` con los CSV por llave primaria. Si una fila que la app referencia desaparece del CSV, la carga falla sin cambiar nada (detalle en [F0001](F0001-subida-datos-aws.md#garantías-de-la-carga)).
 
