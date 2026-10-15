@@ -47,6 +47,7 @@ Consecuencias para el código:
 | `docs/glosario.md` | Siglas y términos del sistema de salud chileno |
 | `docs/feature/F0002-modelo-datos-canales.md` | Modelo de datos de los esquemas `priorizacion` y `canal` (WhatsApp y voz con IA): llaves, vistas del asistente, roles y retención |
 | `docs/feature/F0003-flujos-aws-datos.md` | Estructura de datos de los flujos AWS (`docs/diagramas/flujos-aws.pdf`): reloj de la demo, esquema `consulta` (Knowledge Base y preguntas del equipo clínico) y capa S3 + Athena |
+| `docs/feature/README.md` | **Hoja de ruta**: estado de cada feature, orden de implementación (F0004 a F0013), estructura de carpetas objetivo y plantilla de los planes. Implementar los planes de a uno, en ese orden |
 
 Leer `docs/contexto.md` y `docs/datos.md` antes de escribir código que toque datos.
 

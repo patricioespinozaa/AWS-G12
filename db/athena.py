@@ -213,6 +213,25 @@ def leer_manifiesto(s3, cfg: Config) -> dict:
     return json.loads(cuerpo)
 
 
+def descargar_csv(s3, cfg: Config, destino: Path, progreso=print) -> list[str]:
+    """Baja los CSV publicados a `destino` y verifica cada uno contra el sha256 del manifiesto.
+
+    Lo usa el contenedor del backend al arrancar (docker/backend/entrypoint.sh): los datos del hospital
+    nunca van dentro de la imagen. Si un archivo no coincide con el manifiesto, no se deja en disco.
+    """
+    huellas_publicadas = leer_manifiesto(s3, cfg)["csv_sha256"]
+    destino.mkdir(parents=True, exist_ok=True)
+    bajados = []
+    for archivo, huella in sorted(huellas_publicadas.items()):
+        cuerpo = s3.get_object(Bucket=cfg.bucket, Key=cfg.clave("csv", archivo))["Body"].read()
+        if _sha256(cuerpo) != huella:
+            raise ErrorCarga(f"{archivo}: el sha256 no coincide con el manifiesto publicado")
+        (destino / archivo).write_bytes(cuerpo)
+        bajados.append(archivo)
+        progreso(f"  {archivo:<22} {len(cuerpo) / 1024:>8.1f} KB")
+    return bajados
+
+
 # -- DDL de Athena -----------------------------------------------------------------------------------
 def ddl(cfg: Config) -> list[str]:
     """Base y tablas externas sobre el Parquet. DROP de una tabla externa no borra datos en S3."""
