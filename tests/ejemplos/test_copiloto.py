@@ -1,4 +1,4 @@
-﻿"""Pruebas de ejemplo de U2 (PBT-10) con cliente falso: nunca llaman a Bedrock."""
+"""Pruebas de ejemplo de U2 (PBT-10) con cliente falso: nunca llaman a Bedrock."""
 
 from __future__ import annotations
 
@@ -39,8 +39,9 @@ from hlf_priorizacion.copiloto.config import (
 )
 from hlf_priorizacion.copiloto.persistencia import leer_analisis, leer_fallidos
 from hlf_priorizacion.copiloto.prompt import cargar_prompt
+from hlf_priorizacion.motor.parametros import VERSION_POR_DEFECTO
 
-V = "reglas-v0.1.0"
+V = VERSION_POR_DEFECTO  # reglas-v0.2.0: el lote de prueba corre con la versión por defecto
 ENTORNO = {"HLF_COPILOTO_CONCURRENCIA": "2"}
 
 

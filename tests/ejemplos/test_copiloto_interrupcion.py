@@ -23,8 +23,9 @@ from hlf_priorizacion.copiloto.cliente import ClienteFalso, PeticionModelo, Resp
 from hlf_priorizacion.copiloto.config import ConfigModelo
 from hlf_priorizacion.copiloto.persistencia import leer_analisis, leer_fallidos
 from hlf_priorizacion.copiloto.prompt import cargar_prompt
+from hlf_priorizacion.motor.parametros import VERSION_POR_DEFECTO
 
-V = "reglas-v0.1.0"
+V = VERSION_POR_DEFECTO  # reglas-v0.2.0: el lote de prueba corre con la versión por defecto
 CORTE = date(2026, 7, 20)
 N = 6
 IDS = [f"IC-TST-{i:05d}" for i in range(1, N + 1)]

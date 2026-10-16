@@ -70,6 +70,7 @@ def puntaje_y_niveles(ctx: ContextoPaciente, dq: list[HallazgoDQ], params: Param
     inicial = ctx.solicitud.prioridad_inicial
 
     total = _redondear(getattr(params.base, inicial))
+    doc = params.documento_relaciones
 
     # Eventos con decaimiento y contradicción.
     lam = math.log(2) / params.eventos.vida_media_dias
@@ -78,8 +79,13 @@ def puntaje_y_niveles(ctx: ContextoPaciente, dq: list[HallazgoDQ], params: Param
         peso = next(p.peso for p in params.eventos.pesos if p.tipo == e.tipo_evento and p.subtipo == e.subtipo)
         if e.especialidad_evento == ctx.solicitud.especialidad:
             rel = params.eventos.relacion_misma_especialidad
-        else:
+        elif doc is None:
             rel = params.eventos.relacion_otra_especialidad
+        else:
+            rel = doc.especialidades.por_defecto_otra_especialidad
+            for par in doc.especialidades.pares:
+                if par.de == e.especialidad_evento and par.a == ctx.solicitud.especialidad:
+                    rel = par.factor
         valor = peso * rel * math.exp(-lam * (corte - e.fecha_evento).days)
         if e.subtipo in MEJORIA:
             contradice = False
@@ -141,6 +147,34 @@ def puntaje_y_niveles(ctx: ContextoPaciente, dq: list[HallazgoDQ], params: Param
     plazo = getattr(params.espera.plazos, inicial)
     dias_espera = (corte - ctx.solicitud.fecha_ingreso_lista).days
     total += _redondear(min(params.espera.tope, params.espera.tope * max(0, dias_espera - plazo) / plazo))
+
+    # Otras solicitudes abiertas del mismo paciente (R11), solo si la versión trae documento de relaciones.
+    if doc is not None and params.otras_solicitudes is not None:
+        propia = ctx.solicitud
+        suma_otras = 0.0
+        for otra in ctx.otras_solicitudes:
+            if otra.fecha_ingreso_lista > corte:
+                continue
+            atendida = otra.estado_extraccion == "atendido" and (
+                corte == ctx.fecha_extraccion
+                or any(c.estado_cita == "asistio" and c.especialidad == otra.especialidad for c in ctx.citas)
+            )
+            if atendida:
+                continue
+            misma_esp = otra.especialidad == propia.especialidad
+            if misma_esp and otra.diagnostico_cie10 == propia.diagnostico_cie10:
+                continue
+            par_buscado = {propia.diagnostico_cie10, otra.diagnostico_cie10}
+            relacion = (
+                doc.diagnosticos.por_defecto_misma_especialidad
+                if misma_esp
+                else doc.diagnosticos.por_defecto_otra_especialidad
+            )
+            for par_dx in doc.diagnosticos.pares:
+                if {par_dx.a, par_dx.b} == par_buscado:
+                    relacion = par_dx.factor
+            suma_otras += _redondear(getattr(params.otras_solicitudes.pesos, otra.prioridad_inicial) * relacion)
+        total += _redondear(min(params.otras_solicitudes.tope, suma_otras))
 
     puntaje = _redondear(min(100.0, max(0.0, total)))
     calculado = "baja" if puntaje < params.umbrales.media else "media" if puntaje < params.umbrales.alta else "alta"

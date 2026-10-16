@@ -63,9 +63,10 @@ Interpretación: revisar el documento de contexto de negocio (incluye una secci�
 - **Completed**: U2 — Functional Design + Code Generation (aprobados; correcciones aplicadas)
 - **Completed**: U3 — Functional Design + Code Generation (aprobados)
 - **Completed**: Build and Test (aprobado)
-- **Current Stage**: Flujo AI-DLC completo para el MVP (Operations es placeholder en AI-DLC v1.0.1)
-- **Next Stage**: Ninguna en este flujo. Futuro: U4 (despliegue AWS), U5 (box), U6 (FHIR) reactivando Construction
-- **Status**: Completado
+- **Lifecycle Phase**: CONSTRUCTION (reabierta para U4)
+- **Current Stage**: U4 — Infrastructure Design (plan con preguntas I-1..I-8). Functional Design: SKIP (sin lógica nueva). NFR: ya fijadas en contexto técnico y extensiones
+- **Next Stage**: U4 — Code Generation (plantillas SAM, manejadores, adaptador S3/DynamoDB); luego Build and Test de U4
+- **Status**: Esperando respuestas en `aidlc-docs/construction/plans/u4-infraestructura-infrastructure-design-plan.md`
 
 ## Entorno verificado (2026-10-15)
 - Dataset presente en `data/dataset_hlf_ambulatorio/` (ignorado por git)

@@ -37,8 +37,11 @@ from hlf_priorizacion.bandeja.datos import (
     comando_copiloto,
     comando_lote,
     cortes_disponibles,
+    otras_solicitudes,
     reconstruir_contexto,
+    relaciones_de_version,
     rutas,
+    versiones_disponibles,
 )
 from hlf_priorizacion.bandeja.decisiones import (
     ErrorDecision,
@@ -57,6 +60,8 @@ RAIZ = Path(__file__).resolve().parents[2]
 DATOS_REALES = RAIZ / "data" / "dataset_hlf_ambulatorio"
 SALIDAS_REALES = RAIZ / "salidas"
 C_0719, C_0720 = date(2026, 7, 19), date(2026, 7, 20)
+# Las salidas reales de la demo (con análisis del copiloto) son de reglas-v0.1.0.
+V_DEMO = "reglas-v0.1.0"
 
 
 # --------------------------------------------------------------------------- recorrido de la demo (datos reales)
@@ -66,14 +71,14 @@ C_0719, C_0720 = date(2026, 7, 19), date(2026, 7, 20)
 def reales() -> tuple[Path, Path]:
     if not (DATOS_REALES / "perfiles.json").is_file():
         pytest.skip(f"Dataset real no disponible en {DATOS_REALES} (está en .gitignore)")
-    if C_0720 not in cortes_disponibles(SALIDAS_REALES) or C_0719 not in cortes_disponibles(SALIDAS_REALES):
+    if not {C_0719, C_0720} <= set(cortes_disponibles(SALIDAS_REALES, V_DEMO)):
         pytest.skip(f"Faltan las salidas reales de 2026-07-19/20 en {SALIDAS_REALES}: corra {comando_lote(C_0719)}")
     return DATOS_REALES, SALIDAS_REALES
 
 
 def test_demo_00002_baja_el_0719_y_critica_el_0720_con_ev_000004(reales: tuple[Path, Path]) -> None:
     datos, salidas = reales
-    a, b = cargar_corte(salidas, C_0719), cargar_corte(salidas, C_0720)
+    a, b = cargar_corte(salidas, C_0719, V_DEMO), cargar_corte(salidas, C_0720, V_DEMO)
     ev_a = a.propuestas["IC-HLF-00002"]
     assert ev_a.nivel_propuesto == "baja" and ev_a.tipo_resultado == "sin_alerta" and not ev_a.alertas_gestion
     # Paso 1: en la bandeja por defecto no aparece (sin alerta); con "incluir sin alerta", sí y en baja.
@@ -111,7 +116,7 @@ def test_demo_00002_baja_el_0719_y_critica_el_0720_con_ev_000004(reales: tuple[P
 
 def test_demo_00349_muestra_la_advertencia_de_equidad(reales: tuple[Path, Path]) -> None:
     _, salidas = reales
-    a = cargar_corte(salidas, C_0719)
+    a = cargar_corte(salidas, C_0719, V_DEMO)
     marcas = a.marcas_equidad("IC-HLF-00349")
     assert [m.campo for m in marcas] == ["resumen"]
     # Guardado antes de la marca del sistema: la regla de U2 se aplica al leer (sin modelo).
@@ -123,7 +128,7 @@ def test_demo_00349_muestra_la_advertencia_de_equidad(reales: tuple[Path, Path])
 
 def test_demo_cobertura_0720_coincide_con_el_resumen_del_lote(reales: tuple[Path, Path]) -> None:
     _, salidas = reales
-    b = cargar_corte(salidas, C_0720)
+    b = cargar_corte(salidas, C_0720, V_DEMO)
     cob = cobertura(b, [])
     assert b.resumen is not None
     assert cob["evaluadas"] == b.resumen["solicitudes"]["evaluadas"]
@@ -315,3 +320,51 @@ def test_decisiones_se_agregan_y_la_ultima_es_la_vigente(lote: tuple[Path, Path]
     assert "MOTIVO-SECRETO" not in (salidas / "auditoria" / "eventos.jsonl").read_text(encoding="utf-8")
     # Las propuestas no cambian con las decisiones (B5.6).
     assert _ev(salidas) == ev
+
+
+# --------------------------------------------------------------------------- reglas-v0.2.0: versiones y otras SIC
+
+
+def test_versiones_disponibles_de_la_mas_nueva_a_la_mas_antigua(lote: tuple[Path, Path]) -> None:
+    from estrategias.copiloto import correr_lote_con
+    from estrategias.tuberia import PARAMS_V010
+
+    datos, salidas = lote
+    correr_lote_con(datos, salidas, [CORTE_B], PARAMS_V010)  # una partición vieja junto a la nueva
+    assert versiones_disponibles(salidas, CORTE_B) == [V, "reglas-v0.1.0"]
+    assert versiones_disponibles(salidas, CORTE_A) == [V]
+    assert versiones_disponibles(salidas) == [V, "reglas-v0.1.0"]
+    assert cortes_disponibles(salidas, "reglas-v0.1.0") == [CORTE_B]
+    assert cortes_disponibles(salidas, None) == [CORTE_A, CORTE_B]
+    assert versiones_disponibles(salidas / "no-existe") == []
+    v1 = cargar_corte(salidas, CORTE_B, "reglas-v0.1.0").propuestas["IC-TST-00001"]
+    v2 = cargar_corte(salidas, CORTE_B).propuestas["IC-TST-00001"]
+    assert (v1.puntaje, v1.nivel_propuesto) == (v2.puntaje, v2.nivel_propuesto)  # una SIC: mismo resultado
+    repo = cargar_repositorio(datos)
+    assert reconstruir_contexto(repo, v1).estado == reconstruir_contexto(repo, v2).estado == "ok"  # misma huella
+
+
+def test_relaciones_de_version() -> None:
+    v2 = relaciones_de_version(V)
+    assert (v2.version, v2.estado, v2.validado) == ("relaciones-clinicas-v0.1.0", "sintetico_no_validado", False)
+    v1 = relaciones_de_version("reglas-v0.1.0")
+    assert v1.version is None and v1.estado is None
+
+
+def test_otras_solicitudes_marca_duplicadas(tmp_path: Path) -> None:
+    from ayudantes import normalizado
+    from hlf_priorizacion.repositorio.contexto import contexto_a_fecha
+
+    raw = json.loads((RAIZ / "data" / "synthetic" / "escenario-multi-sic" / "perfiles.json").read_text("utf-8"))[0]
+    ctx = contexto_a_fecha(normalizado(raw), "IC-SIN-00001", date(2026, 8, 10))
+    (o,) = otras_solicitudes(ctx)
+    assert (o.id_solicitud, o.sub_especialidad, o.diagnostico_cie10, o.prioridad_inicial, o.duplicada) == (
+        "IC-SIN-00002",
+        "Insuficiencia cardíaca",
+        "I50",
+        "media",
+        False,
+    )
+    raw["lista_espera"][1]["diagnostico_cie10"] = "I20"
+    ctx = contexto_a_fecha(normalizado(raw), "IC-SIN-00002", date(2026, 8, 10))
+    assert [(o.id_solicitud, o.duplicada) for o in otras_solicitudes(ctx)] == [("IC-SIN-00001", True)]

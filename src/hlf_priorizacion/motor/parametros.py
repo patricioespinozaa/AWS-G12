@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
@@ -10,9 +11,15 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from hlf_priorizacion.contrato.catalogos import COMBINACIONES_EVENTO, TIPOS_MEDICION, TipoMedicion
+from hlf_priorizacion.motor.relaciones import (
+    PATRON_VERSION_RELACIONES,
+    ErrorRelaciones,
+    RelacionesClinicas,
+    cargar_relaciones,
+)
 
 DIRECTORIO_REGLAS = Path(__file__).resolve().parent / "reglas"
-VERSION_POR_DEFECTO = "reglas-v0.1.0"
+VERSION_POR_DEFECTO = "reglas-v0.2.0"
 
 Positivo = Annotated[float, Field(gt=0)]
 NoNegativo = Annotated[float, Field(ge=0)]
@@ -177,8 +184,21 @@ class ParamConfianza(_P):
     dias_aviso_sin_mediciones: Dias
 
 
+class ParamOtrasSolicitudes(_P):
+    """R11.4 / R11.5: peso por prioridad inicial de la otra solicitud y tope de la suma."""
+
+    pesos: PorPrioridad
+    tope: NoNegativo
+
+
 class ParametrosReglas(_P):
     version: Annotated[str, Field(pattern=r"^reglas-v\d+\.\d+\.\d+$")]
+    # reglas-v0.2.0: versión del documento de relaciones clínicas (R5.3, R11). Sin ella, el motor se comporta
+    # como reglas-v0.1.0 (r fijo por especialidad y sin R11).
+    relaciones: Annotated[str, Field(pattern=PATRON_VERSION_RELACIONES)] | None = None
+    otras_solicitudes: ParamOtrasSolicitudes | None = None
+    # Lo llena ``cargar_parametros`` con el documento leído; no se escribe en el YAML.
+    documento_relaciones: RelacionesClinicas | None = None
     base: PorPrioridad
     umbrales: Umbrales
     eventos: ParamEventos
@@ -197,6 +217,11 @@ class ParametrosReglas(_P):
         codigos = [r.codigo for r in self.banderas_medicion + self.pisos]
         if len(codigos) != len(set(codigos)):
             raise ValueError("códigos de bandera/piso duplicados")
+        if (self.relaciones is None) != (self.otras_solicitudes is None):
+            raise ValueError("relaciones y otras_solicitudes se definen juntas")
+        doc = self.documento_relaciones
+        if (doc is None) != (self.relaciones is None) or (doc is not None and doc.version != self.relaciones):
+            raise ValueError("documento_relaciones no corresponde a la versión declarada en relaciones")
         return self
 
 
@@ -204,8 +229,12 @@ def ruta_version(version: str) -> Path:
     return DIRECTORIO_REGLAS / f"{version}.yaml"
 
 
-def cargar_parametros(ruta: Path | None = None) -> ParametrosReglas:
-    """Lee y valida el YAML. El nombre del archivo debe coincidir con ``version``."""
+def cargar_parametros(ruta: Path | None = None, directorio_conocimiento: Path | None = None) -> ParametrosReglas:
+    """Lee y valida el YAML. El nombre del archivo debe coincidir con ``version``.
+
+    Si declara ``relaciones``, carga y valida ese documento desde ``directorio_conocimiento`` (por defecto
+    ``data/conocimiento/`` o ``HLF_CONOCIMIENTO``) y lo deja en ``documento_relaciones``.
+    """
     ruta = ruta or ruta_version(VERSION_POR_DEFECTO)
     try:
         texto = ruta.read_text(encoding="utf-8")
@@ -217,6 +246,14 @@ def cargar_parametros(ruta: Path | None = None) -> ParametrosReglas:
         raise ErrorParametros(f"{ruta} no es YAML válido") from e
     if not isinstance(datos, dict):
         raise ErrorParametros(f"{ruta} debe contener un mapa de parámetros")
+    if "documento_relaciones" in datos:
+        raise ErrorParametros(f"{ruta.name}: documento_relaciones no se declara en el YAML (use relaciones)")
+    nombre_relaciones = datos.get("relaciones")
+    if isinstance(nombre_relaciones, str) and re.match(PATRON_VERSION_RELACIONES, nombre_relaciones):
+        try:
+            datos = {**datos, "documento_relaciones": cargar_relaciones(nombre_relaciones, directorio_conocimiento)}
+        except ErrorRelaciones as e:
+            raise ErrorParametros(str(e)) from e
     try:
         params = ParametrosReglas.model_validate(datos)
     except ValidationError as e:

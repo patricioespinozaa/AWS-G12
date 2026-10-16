@@ -19,8 +19,9 @@ from hlf_priorizacion.bandeja.filas import ESTADOS_DECISION, TIPOS_RESULTADO, Fi
 from hlf_priorizacion.copiloto.modelos import RegistroAnalisis, UsoModelo
 from hlf_priorizacion.copiloto.persistencia import guardar_analisis
 from hlf_priorizacion.modelos import NIVELES, AnalisisIA, Bandera, Decision, Evaluacion, Piso, RegistroCitado
+from hlf_priorizacion.motor.parametros import VERSION_POR_DEFECTO
 
-V = "reglas-v0.1.0"
+V = VERSION_POR_DEFECTO  # reglas-v0.2.0: el lote sintético corre con la versión por defecto
 CORTE_A = date(2026, 7, 19)
 CORTE_B = date(2026, 7, 20)
 CODIGOS_BANDERA = ("BR_EVENTO_GRAVE_30D", "BR_MEDICION_EXTREMA")

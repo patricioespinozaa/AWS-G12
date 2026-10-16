@@ -87,3 +87,74 @@ Si un caso de `docs/casos-ejemplo.md` falla, se ajustan los parámetros en una n
 ## Equidad (transversal)
 
 `comuna`, `prevision` y `nivel_socioeconomico` no existen en `ContextoPaciente`. Las citas no entran a R5 ni a R6: solo a R7.
+
+
+---
+
+# Cambio reglas-v0.2.0 — Solicitudes del mismo paciente y relaciones clínicas (2026-10-16)
+
+Pedido del usuario: cuando un paciente ya en espera recibe una nueva SIC de la misma especialidad y otra subespecialidad, cada SIC debe considerar el posible impacto de la otra, en ambos sentidos. Las relaciones entre eventos y diagnósticos, incluso de especialidades distintas, vienen de un documento del hospital que se trata como **insumo estándar**.
+
+Base de negocio: secciones 5.1 (la acumulación de consultas del mismo paciente "es un fenómeno a considerar"), 5.3 (deduplicación) y 7 (factor "cruce entre especialidades", "según definición clínica vigente").
+
+`reglas-v0.1.0` queda sin cambios; `reglas-v0.2.0` pasa a ser la versión por defecto.
+
+## Insumo: documento de relaciones clínicas
+
+- Archivo versionado `data/conocimiento/relaciones-clinicas-vX.Y.Z.yaml`, referenciado por versión desde `reglas-v0.2.0.yaml` (`relaciones: relaciones-clinicas-v0.1.0`).
+- La versión actual es una **plantilla sintética no validada** (`estado: sintetico_no_validado`). Debe reemplazarla el documento del HLF (T3).
+- Se valida al cargar: versión coincide con el nombre, factores en [0, 1], especialidades del catálogo, CIE-10 con formato válido, sin pares repetidos. Inválido → el lote se detiene (fail-closed, igual que los parámetros).
+- Si `estado` no es `validado`, **solo las evaluaciones que usaron el documento** (algún evento de otra especialidad o algún factor `otra_solicitud`) llevan el motivo de confianza "relaciones clínicas no validadas", y su confianza no puede ser `alta`. Las demás no cambian.
+
+## R5.3 (modificada) — Relación evento ↔ solicitud
+
+| Caso | Factor `r` |
+|---|---|
+| Evento de la misma especialidad que la solicitud | 1,0 |
+| Evento de otra especialidad, par listado en `especialidades.pares` (`de` = especialidad del evento, `a` = de la solicitud) | El del documento |
+| Evento de otra especialidad, par no listado | `especialidades.por_defecto_otra_especialidad` (0,5, igual que v0.1.0) |
+
+El factor usado se informa en el detalle del factor ("relación Endocrinología → Cardiología 0,7 según relaciones-clinicas-v0.1.0").
+
+## R5.10 (aclaración) — Eventos anteriores al ingreso de la solicitud
+
+Los eventos y mediciones del paciente anteriores a `fecha_ingreso_lista` de una solicitud **sí aportan** a esa solicitud, con su decaimiento normal. Son la historia del paciente y pueden ser el motivo de la derivación (por ejemplo, una nueva SIC que llega tras una hospitalización). El hallazgo DQ `registro_previo_ingreso` sigue siendo `info` y solo se informa. Esto ya era el comportamiento del código; ahora queda escrito y se corrige la sección 7 del contexto técnico, que decía "no aporta".
+
+## R11 (nueva) — Otras solicitudes abiertas del mismo paciente
+
+Para cada solicitud A y cada otra solicitud B del mismo paciente:
+
+| Regla | Detalle |
+|---|---|
+| R11.1 Vigencia | B cuenta si `fecha_ingreso_lista_B ≤ corte` y B no está excluida al corte por R3 (fallecido, atendido o atendido inferido) |
+| R11.2 Duplicado (negocio 5.3) | Si A y B tienen la misma especialidad **y** el mismo CIE-10, son duplicadas: no se aportan puntaje entre sí. La más reciente (mayor `fecha_ingreso_lista`; empate por `id_solicitud`) recibe la alerta de gestión `sic_duplicada` con el ID de la otra. La subespecialidad distinta no evita el duplicado si el CIE-10 coincide |
+| R11.3 Relación | `rel(A, B)` = factor del par `{CIE-10_A, CIE-10_B}` en `diagnosticos.pares` (simétrico); si no está: misma especialidad → `por_defecto_misma_especialidad` (0,5); otra especialidad → `por_defecto_otra_especialidad` (0,0, sin impacto) |
+| R11.4 Aporte | `aporte_B = peso_otra_solicitud[prioridad_inicial_B] × rel(A, B)`, con pesos alta 8, media 5, baja 3. **Sin decaimiento:** una solicitud abierta es un problema clínico vigente, no un evento que se aleja en el tiempo |
+| R11.5 Tope | La suma de aportes por otras solicitudes en A no supera 10 |
+| R11.6 Simetría | El cálculo es simétrico por construcción: A recibe impacto de B y B recibe impacto de A, cada uno con la prioridad inicial de la otra |
+| R11.7 Explicación | Factor `otra_solicitud` con `ids_registro = [id_solicitud_B]` y detalle "CIE-10_B (subespecialidad, prioridad inicial), relación x según relaciones-clinicas-vX" |
+| R11.8 Equidad | Sin cambios: R11 solo usa especialidad, CIE-10, prioridad inicial y fechas |
+
+El puntaje queda: `base + eventos + aceleración + min(20, mediciones) + espera + min(10, otras solicitudes)`, acotado a [0, 100]. R6 (niveles, límite de bajada, pisos, banderas) no cambia.
+
+## Efecto esperado en el escenario de referencia
+
+Escenario sintético reproducible `data/synthetic/escenario-multi-sic/` (PAC-SIN-00001; IC-SIN-00001 I20 baja, ingreso 2025-11-08; IC-SIN-00002 I50 media, ingreso 2026-08-01), corte 2026-08-10, `rel(I20, I50) = 0,9`. Valores reales del lote:
+- IC-SIN-00001 (I20): recibe `5 × 0,9 = 4,5` de la nueva: 79,85 → 84,35.
+- IC-SIN-00002 (I50): recibe `3 × 0,9 = 2,7` de la anterior: 97,27 (94,57 sin R11).
+
+(El cálculo previo con PAC-HLF-00002 en memoria daba los mismos aportes, +4,5 y +2,7.)
+
+## Efecto en el dataset actual
+
+Ninguno en los puntajes: cada paciente tiene una sola SIC y no hay eventos de otra especialidad (verificado: 0 de 786). Los 6 casos de referencia deben dar lo mismo que con v0.1.0; solo cambia `version_reglas`.
+
+## Propiedades testeables nuevas (PBT-01)
+
+- Simetría: con dos solicitudes A y B, el aporte de B en A usa la prioridad de B y el de A en B usa la de A, con el mismo `rel`.
+- Agregar una SIC de otra especialidad sin par listado no cambia el puntaje de las existentes (rel = 0).
+- Agregar una SIC nunca baja el puntaje de otra solicitud del paciente (aportes ≥ 0).
+- Duplicadas (misma especialidad y CIE-10) no se aportan entre sí.
+- Tope: el aporte total por otras solicitudes ≤ 10.
+- Una SIC con ingreso posterior al corte no aporta (sin fuga de información futura).
+- Con una sola SIC por paciente, v0.2.0 con el documento por defecto da el mismo puntaje que v0.1.0 (oráculo).

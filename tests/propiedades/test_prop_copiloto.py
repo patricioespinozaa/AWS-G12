@@ -67,6 +67,7 @@ from hlf_priorizacion.copiloto.validacion import (
     validar_salida,
 )
 from hlf_priorizacion.modelos import AnalisisIA, Evaluacion, MetadatosAnalisis
+from hlf_priorizacion.motor.parametros import VERSION_POR_DEFECTO
 
 PROMPT = cargar_prompt()
 CONFIG = ConfigModelo()
@@ -289,13 +290,13 @@ def test_p12_segunda_ejecucion_sin_llamadas_ni_duplicados(crudos: list[dict[str,
         datos = escribir_dataset(Path(tmp) / "datos", crudos)
         salidas = Path(tmp) / "salidas"
         correr_lote(datos, salidas, [corte])
-        cfg = ConfigBarrido([corte], False, FECHA_EXTRACCION, datos, salidas, "reglas-v0.1.0", 300)
+        cfg = ConfigBarrido([corte], False, FECHA_EXTRACCION, datos, salidas, VERSION_POR_DEFECTO, 300)
         r1 = ejecutar_barrido(cfg, CONFIG, PROMPT, ClienteFalso(responder_eco), "e1", dormir=lambda _s: None)
-        antes = leer_analisis(salidas, corte, "reglas-v0.1.0")
+        antes = leer_analisis(salidas, corte, VERSION_POR_DEFECTO)
         cliente2 = ClienteFalso(responder_eco)
         r2 = ejecutar_barrido(cfg, CONFIG, PROMPT, cliente2, "e2", dormir=lambda _s: None)
         assert cliente2.llamadas == [] and r2.llamadas_modelo == 0
-        assert leer_analisis(salidas, corte, "reglas-v0.1.0") == antes
+        assert leer_analisis(salidas, corte, VERSION_POR_DEFECTO) == antes
         assert len(antes) == r1.analizadas
         assert r2.omitidas.get("ya_analizada", 0) == r1.analizadas
 
@@ -498,17 +499,17 @@ def test_p17_lo_persistido_es_completo_y_con_lo_interrumpido_cubre_el_plan(
     with tempfile.TemporaryDirectory() as tmp:
         salidas = Path(tmp) / "salidas"
         shutil.copytree(lote, salidas)
-        cfg = ConfigBarrido([CORTE_P17], False, FECHA_EXTRACCION, datos, salidas, "reglas-v0.1.0", 300)
+        cfg = ConfigBarrido([CORTE_P17], False, FECHA_EXTRACCION, datos, salidas, VERSION_POR_DEFECTO, 300)
         config = ConfigModelo(concurrencia=concurrencia)
         r = ejecutar_barrido(cfg, config, PROMPT, ClienteFalso(responder), "e1", dormir=lambda _s: None, vigia=vigia)
 
-        carpeta = carpeta_analisis(salidas, CORTE_P17, "reglas-v0.1.0")
+        carpeta = carpeta_analisis(salidas, CORTE_P17, VERSION_POR_DEFECTO)
         filas_analisis = _lineas_jsonl(carpeta / "analisis.jsonl")
         filas_fallidos = _lineas_jsonl(carpeta / "fallidos.jsonl")
         eventos = _lineas_jsonl(salidas / "auditoria" / "eventos.jsonl")
-        analisis = leer_analisis(salidas, CORTE_P17, "reglas-v0.1.0")
+        analisis = leer_analisis(salidas, CORTE_P17, VERSION_POR_DEFECTO)
         assert len(analisis) == len(filas_analisis)
-        fallidas = {f.id_solicitud for f in leer_fallidos(salidas, CORTE_P17, "reglas-v0.1.0")}
+        fallidas = {f.id_solicitud for f in leer_fallidos(salidas, CORTE_P17, VERSION_POR_DEFECTO)}
         assert len(fallidas) == len(filas_fallidos)
 
         # Todo análisis guardado tiene su llamada auditada, su E/S del modelo y su evento analisis_ia.

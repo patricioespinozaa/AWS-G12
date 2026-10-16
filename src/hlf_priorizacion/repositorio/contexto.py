@@ -13,7 +13,7 @@ from typing import Final
 
 from hlf_priorizacion.contrato.esquema import Solicitud
 from hlf_priorizacion.ingesta.normalizacion import PerfilNormalizado, normalizar_valor
-from hlf_priorizacion.modelos import ContextoPaciente, RegistroCitado, SolicitudContexto
+from hlf_priorizacion.modelos import ContextoPaciente, RegistroCita, RegistroCitado, SolicitudContexto
 
 FECHA_EXTRACCION_DATASET: Final = date(2026, 10, 13)
 
@@ -60,6 +60,16 @@ def huella_contexto(ctx: ContextoPaciente) -> str:
     return "sha256:" + hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
+def cita_egreso_inferido(citas: Iterable[RegistroCita], especialidad: str) -> RegistroCita | None:
+    """R3.3: última cita ``asistio`` de la especialidad (las citas ya vienen filtradas al corte).
+
+    La usan el contexto (egreso inferido de la solicitud evaluada) y el motor (vigencia de las otras
+    solicitudes del paciente, R11.1), para que ambos apliquen exactamente la misma regla.
+    """
+    asistidas = [c for c in citas if c.estado_cita == "asistio" and c.especialidad == especialidad]
+    return max(asistidas, key=lambda c: (c.fecha_cita, c.id_cita)) if asistidas else None
+
+
 def validar_fecha_corte(fecha_corte: date, fecha_extraccion: date, fecha_ingreso: date | None = None) -> None:
     if fecha_corte > fecha_extraccion:
         raise ErrorFechaCorte("fecha_corte no puede ser posterior a fecha_extraccion")
@@ -91,11 +101,11 @@ def contexto_a_fecha(
     fecha_egreso: date | None = None
     id_cita_egreso: str | None = None
     if fecha_corte < fecha_extraccion and solicitud.estado == "atendido":
-        asistidas = [c for c in citas if c.estado_cita == "asistio" and c.especialidad == solicitud.especialidad]
-        if asistidas:
-            ultima = max(asistidas, key=lambda c: (c.fecha_cita, c.id_cita))
+        ultima = cita_egreso_inferido(citas, solicitud.especialidad)
+        if ultima is not None:
             fecha_egreso, id_cita_egreso = ultima.fecha_cita, ultima.id_cita
 
+    # Sin fuga de información futura (R2, R11.1): solo las otras solicitudes que ya estaban en la lista al corte.
     otras = [
         _solicitud_contexto(s, fecha_corte, fecha_extraccion)
         for s in perfil.solicitudes

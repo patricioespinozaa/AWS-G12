@@ -292,3 +292,47 @@ def test_fallo_de_auditoria_no_se_informa_como_fallo_de_guardado(lote, monkeypat
     assert len(leer_decisiones(salidas)) == 1
     assert any("quedó guardada" in w.value and "No la vuelva a guardar" in w.value for w in at.warning)
     assert not any("No se pudo guardar" in e.value for e in at.error)
+
+
+# --------------------------------------------------------------------------- reglas-v0.2.0: versión y otras SIC
+
+
+def test_selector_de_version_por_defecto_la_mas_nueva(lote: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    from estrategias.copiloto import correr_lote_con
+    from estrategias.tuberia import PARAMS_V010
+
+    datos, salidas = lote
+    correr_lote_con(datos, salidas, [CORTE_B], PARAMS_V010)
+    at = _app(salidas, datos, monkeypatch)
+    at.selectbox(key="lateral-corte").select("2026-07-20").run()
+    assert at.selectbox(key="lateral-version").options == ["reglas-v0.2.0", "reglas-v0.1.0"]
+    assert at.selectbox(key="lateral-version").value == "reglas-v0.2.0"
+    at.selectbox(key="lateral-version").select("reglas-v0.1.0").run()
+    assert not at.exception, [e.value for e in at.exception]
+    _ir(at, "Detalle")
+    assert any("reglas-v0.1.0 no usa documento de relaciones" in c.value for c in at.caption)
+    at.selectbox(key="lateral-corte").select("2026-07-19").run()  # solo tiene reglas-v0.2.0
+    assert at.selectbox(key="lateral-version").options == ["reglas-v0.2.0"]
+    assert at.selectbox(key="lateral-version").value == "reglas-v0.2.0"
+
+
+def test_detalle_lista_otras_sic_y_advierte_relaciones_no_validadas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from estrategias.copiloto import correr_lote
+
+    perfiles = json.loads((RAIZ / "data" / "synthetic" / "escenario-multi-sic" / "perfiles.json").read_text("utf-8"))
+    datos = escribir_dataset(tmp_path / "datos", perfiles)
+    salidas = tmp_path / "salidas"
+    correr_lote(datos, salidas, [date(2026, 8, 10)])
+    at = _app(salidas, datos, monkeypatch)
+    _abrir_detalle(at, "", "2026-08-10", "IC-SIN-00001")
+    assert any("relaciones-clinicas-v0.1.0" in m.value and "sintetico_no_validado" in m.value for m in at.markdown)
+    assert any("no está validado por el equipo clínico" in w.value for w in at.warning)
+    otras = next(df.value for df in at.dataframe if "Subespecialidad" in df.value.columns)
+    assert otras["ID"].tolist() == ["IC-SIN-00002"] and otras["CIE-10"].tolist() == ["I50"]
+    assert otras["Duplicada"].tolist() == [""]
+    factores = next(df.value for df in at.dataframe if "Aporte" in df.value.columns)
+    fila = factores[factores["Factor"] == "otra_solicitud"]
+    assert fila["Aporte"].tolist() == [4.5] and fila["IDs"].tolist() == ["IC-SIN-00002"]
+    assert any("Análisis IA pendiente" in i.value for i in at.info)

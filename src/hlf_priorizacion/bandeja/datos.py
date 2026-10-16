@@ -1,6 +1,7 @@
 """Lectura de las salidas de U1 y U2 para la bandeja (B1: solo lectura) y contexto reconstruido.
 
-- Cortes disponibles: carpetas ``salidas/propuestas/fecha_corte=*/version_reglas=<v>/propuestas.parquet``.
+- Cortes y versiones de reglas disponibles: carpetas
+  ``salidas/propuestas/fecha_corte=*/version_reglas=*/propuestas.parquet``.
 - ``DatosCorte``: propuestas (con especialidad), análisis, fallidos, hallazgos DQ, cohortes y resumen del lote.
 - La ``Evaluacion`` no guarda el contexto: se reconstruye desde el dataset y se exige la misma
   ``huella_contexto`` (igual que U2 en ``copiloto/paquete.py``). Si no coincide, no hay línea de tiempo.
@@ -38,7 +39,7 @@ from hlf_priorizacion.modelos import (
     RegistroCitado,
     ResultadoCohorte,
 )
-from hlf_priorizacion.motor.parametros import VERSION_POR_DEFECTO
+from hlf_priorizacion.motor.parametros import VERSION_POR_DEFECTO, cargar_parametros, ruta_version
 from hlf_priorizacion.persistencia.salidas import ErrorPersistencia, leer_propuestas, ruta_propuestas
 from hlf_priorizacion.repositorio.contexto import (
     FECHA_EXTRACCION_DATASET,
@@ -61,6 +62,8 @@ ANALISIS_PENDIENTE: Final = "Análisis IA pendiente"
 AVISO_DEMO: Final = "Demo local con datos sintéticos. El sistema propone; el médico decide."
 
 _RE_CORTE: Final = re.compile(r"^fecha_corte=(\d{4}-\d{2}-\d{2})$")
+_RE_PARTICION_VERSION: Final = re.compile(r"^version_reglas=(reglas-v\d+\.\d+\.\d+)$")
+_RE_VERSION: Final = re.compile(r"^reglas-v(\d+)\.(\d+)\.(\d+)$")
 
 EstadoAnalisis = Literal["si", "no", "fallido"]
 
@@ -83,23 +86,93 @@ def comando_copiloto(corte: date) -> str:
     return f"uv run hlf-copiloto --fecha-corte {corte.isoformat()}"
 
 
-def cortes_disponibles(raiz: Path, version_reglas: str = VERSION_REGLAS) -> list[date]:
-    """Cortes con propuestas de ``version_reglas``, en orden ascendente."""
+def _clave_version(version: str) -> tuple[int, ...]:
+    m = _RE_VERSION.match(version)
+    return tuple(int(x) for x in m.groups()) if m else (-1,)
+
+
+def _particiones(raiz: Path) -> dict[date, list[str]]:
+    """``{corte: [versiones con propuestas.parquet]}`` según ``propuestas/fecha_corte=*/version_reglas=*``."""
     base = raiz / "propuestas"
     if not base.is_dir():
-        return []
-    cortes: list[date] = []
+        return {}
+    salida: dict[date, list[str]] = {}
     for carpeta in base.iterdir():
         m = _RE_CORTE.match(carpeta.name)
-        if m is None:
+        if m is None or not carpeta.is_dir():
             continue
         try:
             corte = date.fromisoformat(m.group(1))
         except ValueError:
             continue
-        if ruta_propuestas(raiz, corte, version_reglas).is_file():
-            cortes.append(corte)
-    return sorted(cortes)
+        versiones = []
+        for sub in carpeta.iterdir():
+            mv = _RE_PARTICION_VERSION.match(sub.name)
+            if mv is not None and ruta_propuestas(raiz, corte, mv.group(1)).is_file():
+                versiones.append(mv.group(1))
+        if versiones:
+            salida[corte] = versiones
+    return salida
+
+
+def cortes_disponibles(raiz: Path, version_reglas: str | None = VERSION_REGLAS) -> list[date]:
+    """Cortes con propuestas de ``version_reglas`` (``None``: de cualquier versión), en orden ascendente."""
+    return sorted(c for c, vs in _particiones(raiz).items() if version_reglas is None or version_reglas in vs)
+
+
+def versiones_disponibles(raiz: Path, corte: date | None = None) -> list[str]:
+    """Versiones de reglas con propuestas (en ``corte`` si se indica), de la más nueva a la más antigua."""
+    particiones = _particiones(raiz)
+    grupos = [particiones.get(corte, [])] if corte is not None else list(particiones.values())
+    return sorted({v for vs in grupos for v in vs}, key=_clave_version, reverse=True)
+
+
+@dataclass(frozen=True)
+class InfoRelaciones:
+    """Documento de relaciones clínicas de una versión de reglas (``None`` en versiones sin R11)."""
+
+    version_reglas: str
+    version: str | None
+    estado: str | None
+
+    @property
+    def validado(self) -> bool:
+        return self.estado == "validado"
+
+
+def relaciones_de_version(version_reglas: str) -> InfoRelaciones:
+    """Lee los parámetros empaquetados de ``version_reglas`` y su documento de relaciones (fail-closed)."""
+    params = cargar_parametros(ruta_version(version_reglas))
+    doc = params.documento_relaciones
+    return InfoRelaciones(version_reglas, doc.version if doc else None, doc.estado if doc else None)
+
+
+@dataclass(frozen=True)
+class OtraSolicitud:
+    id_solicitud: str
+    especialidad: str
+    sub_especialidad: str
+    diagnostico_cie10: str
+    prioridad_inicial: str
+    fecha_ingreso_lista: date
+    duplicada: bool
+
+
+def otras_solicitudes(ctx: ContextoPaciente) -> list[OtraSolicitud]:
+    """Otras SIC del paciente ya ingresadas al corte; ``duplicada``: misma especialidad y CIE-10 (R11.2)."""
+    s = ctx.solicitud
+    return [
+        OtraSolicitud(
+            id_solicitud=o.id_solicitud,
+            especialidad=o.especialidad,
+            sub_especialidad=o.sub_especialidad,
+            diagnostico_cie10=o.diagnostico_cie10,
+            prioridad_inicial=o.prioridad_inicial,
+            fecha_ingreso_lista=o.fecha_ingreso_lista,
+            duplicada=o.especialidad == s.especialidad and o.diagnostico_cie10 == s.diagnostico_cie10,
+        )
+        for o in sorted(ctx.otras_solicitudes, key=lambda o: (o.fecha_ingreso_lista, o.id_solicitud))
+    ]
 
 
 # --------------------------------------------------------------------------- datos de un corte

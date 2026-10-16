@@ -1,0 +1,45 @@
+# Relaciones clínicas entre especialidades y diagnósticos (insumo estándar del motor, R11).
+#
+# QUÉ ES: el documento que el hospital (HLF) mantiene para indicar qué eventos de una especialidad afectan a
+# solicitudes de otra, y qué diagnósticos de solicitudes abiertas del mismo paciente se relacionan entre sí.
+#
+# ESTADO DE ESTE ARCHIVO: PLANTILLA SINTÉTICA, NO VALIDADA CLÍNICAMENTE. Los pares y factores son
+# ejemplos plausibles para probar la lógica. Debe reemplazarse por el documento del HLF (tema T3 de
+# docs/contexto-tecnico.md). Cada cambio crea una versión nueva del archivo (relaciones-clinicas-vX.Y.Z.yaml)
+# y se referencia desde reglas-vX.Y.Z.yaml.
+#
+# FACTORES: entre 0 y 1. Multiplican el aporte del evento o de la otra solicitud.
+version: relaciones-clinicas-v0.1.0
+estado: sintetico_no_validado
+fuente: "Plantilla del equipo técnico; pendiente de reemplazo por el documento del HLF"
+
+# Eventos (R5.3): factor con que un evento de la especialidad `de` afecta a una solicitud de la especialidad `a`.
+# Dirigido: Endocrinología -> Cardiología no implica Cardiología -> Endocrinología.
+# Misma especialidad: siempre 1.0 (no se lista). Par no listado: `por_defecto_otra_especialidad`.
+especialidades:
+  por_defecto_otra_especialidad: 0.5
+  pares:
+    - {de: Endocrinología, a: Cardiología, factor: 0.7, motivo: "Descompensación metabólica y riesgo cardiovascular"}
+    - {de: Broncopulmonar, a: Cardiología, factor: 0.7, motivo: "Enfermedad respiratoria crónica y falla cardíaca"}
+    - {de: Cardiología, a: Broncopulmonar, factor: 0.7, motivo: "Falla cardíaca y disnea"}
+    - {de: Gastroenterología, a: Endocrinología, factor: 0.6, motivo: "Hepatopatía y control glicémico"}
+    - {de: Traumatología, a: Salud Mental, factor: 0.3, motivo: "Dolor crónico y salud mental"}
+
+# Solicitudes abiertas del mismo paciente (R11): factor de relación entre los diagnósticos CIE-10 de dos
+# solicitudes. Simétrico: el par {a, b} vale en ambos sentidos.
+# Par no listado: misma especialidad -> `por_defecto_misma_especialidad`; distinta -> `por_defecto_otra_especialidad`.
+diagnosticos:
+  por_defecto_misma_especialidad: 0.5
+  por_defecto_otra_especialidad: 0.0
+  pares:
+    - {a: I20, b: I50, factor: 0.9, motivo: "Cardiopatía isquémica e insuficiencia cardíaca"}
+    - {a: I10, b: I20, factor: 0.7, motivo: "Hipertensión y cardiopatía isquémica"}
+    - {a: I10, b: I50, factor: 0.7, motivo: "Hipertensión e insuficiencia cardíaca"}
+    - {a: E11, b: I20, factor: 0.6, motivo: "Diabetes y cardiopatía isquémica"}
+    - {a: E11, b: I50, factor: 0.5, motivo: "Diabetes e insuficiencia cardíaca"}
+    - {a: E11, b: I10, factor: 0.5, motivo: "Diabetes e hipertensión"}
+    - {a: E11, b: E66, factor: 0.7, motivo: "Diabetes y obesidad"}
+    - {a: J44, b: I50, factor: 0.6, motivo: "EPOC e insuficiencia cardíaca"}
+    - {a: F32, b: F41, factor: 0.8, motivo: "Depresión y ansiedad"}
+    - {a: K70, b: E11, factor: 0.4, motivo: "Hepatopatía y diabetes"}
+    - {a: M54, b: M17, factor: 0.3, motivo: "Lumbago y artrosis de rodilla"}

@@ -34,7 +34,8 @@ CIE10_POR_ESPECIALIDAD = {
 }
 ESPECIALIDADES = sorted(CIE10_POR_ESPECIALIDAD)
 COMBINACIONES = sorted(COMBINACIONES_EVENTO.items())
-RANGOS = cargar_parametros().mediciones.rangos
+_PARAMS = cargar_parametros()
+RANGOS = _PARAMS.mediciones.rangos
 TIPOS = sorted(UNIDAD_POR_TIPO)
 CATEGORIAS_MEDICION = ("normal", "riesgo", "extremo", "imposible", "borde")
 
@@ -171,6 +172,75 @@ def perfiles(
         "mediciones": [draw(mediciones(desde, fin)) for _ in range(n_med)],
         "citaciones": [draw(citas(f"CT-{k + 1:06d}", desde, fin, especialidad)) for k in range(n_ci)],
     }
+
+
+TIPOS_SIC_EXTRA = ("par_listado", "misma_especialidad", "otra_especialidad", "duplicada")
+_DOC = _PARAMS.documento_relaciones
+PARES_DIAGNOSTICO = [(p.a, p.b) for p in _DOC.diagnosticos.pares] if _DOC is not None else []
+ESPECIALIDAD_DE_CIE10 = {c: e for e, cs in CIE10_POR_ESPECIALIDAD.items() for c in cs}
+
+
+@st.composite
+def solicitudes_extra(
+    draw: st.DrawFn,
+    principal: dict[str, Any],
+    id_solicitud: str,
+    tipo: str | None = None,
+    hasta: date = FIN_INGRESOS,
+    estados: tuple[str, ...] = ("en_espera", "en_espera", "en_espera", "atendido"),
+) -> dict[str, Any]:
+    """Otra SIC del mismo paciente (reglas-v0.2.0, R11): con un par de diagnósticos listado en el documento de
+    relaciones (de la misma u otra especialidad), de la misma especialidad con otro CIE-10, de otra especialidad
+    (casi siempre sin par) o duplicada (misma especialidad y CIE-10, otra subespecialidad)."""
+    tipo = tipo or draw(st.sampled_from(TIPOS_SIC_EXTRA))
+    esp, cie_principal = principal["especialidad"], principal["diagnostico_cie10"]
+    socios = [b if a == cie_principal else a for a, b in PARES_DIAGNOSTICO if cie_principal in (a, b)]
+    if tipo == "par_listado" and socios:
+        cie10 = draw(st.sampled_from(socios))
+        esp = ESPECIALIDAD_DE_CIE10[cie10]
+    elif tipo == "duplicada":
+        cie10 = cie_principal
+    elif tipo in {"misma_especialidad", "par_listado"}:
+        otros = [c for c in CIE10_POR_ESPECIALIDAD[esp] if c != cie_principal]
+        cie10 = draw(st.sampled_from(otros))
+    else:
+        esp = draw(st.sampled_from([e for e in ESPECIALIDADES if e != principal["especialidad"]]))
+        cie10 = draw(st.sampled_from(CIE10_POR_ESPECIALIDAD[esp]))
+    return {
+        "id_solicitud": id_solicitud,
+        "especialidad": esp,
+        "sub_especialidad": f"{esp} subespecialidad {draw(st.integers(1, 3))}",
+        "diagnostico_cie10": cie10,
+        "diagnostico_texto": "diagnóstico sintético",
+        "prioridad_inicial": draw(st.sampled_from(["alta", "media", "baja"])),
+        "fecha_ingreso_lista": draw(fechas(INICIO_INGRESOS, hasta)).isoformat(),
+        "origen_derivacion": draw(st.sampled_from(["CESFAM/APS", "Urgencia", "Hospitalización"])),
+        "estado": draw(st.sampled_from(estados)),
+    }
+
+
+@st.composite
+def perfil_multi_y_corte(
+    draw: st.DrawFn, min_solicitudes: int = 1, max_solicitudes: int = 3, **kw: Any
+) -> tuple[dict[str, Any], date]:
+    """Perfil con 1 a 3 SIC (``lista_espera`` como lista) y una fecha de corte válida para la primera.
+
+    Las SIC extra pueden ingresar después del corte (para probar que no hay fuga de información futura).
+    Por defecto sin fallecidos: un paciente fallecido excluye todas sus SIC y no ejercita R11.
+    """
+    kw.setdefault("permitir_fallecido", False)
+    raw, corte = draw(perfil_y_corte(**kw))
+    principal = raw["lista_espera"]
+    # sampled_from se reduce hacia el primer elemento: se ordena para que lo simple sea "2 SIC vigentes".
+    n = draw(st.sampled_from([k for k in (2, 3, 1) if min_solicitudes <= k <= max_solicitudes]))
+    sufijo = principal["id_solicitud"].rsplit("-", 1)[1]
+    extras = []
+    for k in range(1, n):
+        # Casi siempre ingresada al corte; a veces después (no debe aportar).
+        hasta = FIN_INGRESOS if draw(st.integers(0, 4)) == 4 else max(corte, INICIO_INGRESOS)
+        extras.append(draw(solicitudes_extra(principal, f"IC-MUL{k}-{sufijo}", hasta=hasta)))
+    raw["lista_espera"] = [principal, *extras]
+    return raw, corte
 
 
 def fechas_registro(perfil: dict[str, Any]) -> list[date]:

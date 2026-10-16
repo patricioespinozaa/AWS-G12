@@ -9,6 +9,7 @@ import pytest
 
 from ayudantes import cita, evento, medicion, perfil_base
 from hlf_priorizacion.lote import SALIDA_ENTRADA, SALIDA_OK, main
+from hlf_priorizacion.motor.parametros import VERSION_POR_DEFECTO
 
 
 def _dataset(tmp_path: Path) -> Path:
@@ -45,8 +46,9 @@ def test_lote_extremo_a_extremo_idempotente(tmp_path: Path, capsys: pytest.Captu
         assert {"timestamp", "nivel", "id_ejecucion", "mensaje"} <= set(registro)
     assert "167" not in salida.err and "Comuna A" not in salida.err and "Paciente Prueba" not in salida.err
 
-    parquet = salidas / "propuestas" / "fecha_corte=2026-07-20" / "version_reglas=reglas-v0.1.0" / "propuestas.parquet"
-    resumen = salidas / "resumen" / "fecha_corte=2026-07-20" / "version_reglas=reglas-v0.1.0" / "resumen.json"
+    particion = f"version_reglas={VERSION_POR_DEFECTO}"
+    parquet = salidas / "propuestas" / "fecha_corte=2026-07-20" / particion / "propuestas.parquet"
+    resumen = salidas / "resumen" / "fecha_corte=2026-07-20" / particion / "resumen.json"
     cuarentena = salidas / "cuarentena" / "fecha_extraccion=2026-10-13" / "cuarentena.jsonl"
     auditoria = salidas / "auditoria" / "eventos.jsonl"
     primeros = {r: r.read_bytes() for r in (parquet, resumen, cuarentena)}

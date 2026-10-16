@@ -5,7 +5,12 @@ llega en sus argumentos. Reglas R3, R5-R8 de ``business-rules.md``; algoritmo de
 ``business-logic-model.md``.
 
 Orden: exclusión -> quitar descartados -> factores (base, eventos, aceleración, mediciones con tope,
-espera) -> acotar -> nivel calculado -> límite de bajada -> pisos -> banderas -> alertas -> tipo y confianza.
+espera, otras solicitudes con tope) -> acotar -> nivel calculado -> límite de bajada -> pisos -> banderas ->
+alertas -> tipo y confianza.
+
+reglas-v0.2.0 (``params.documento_relaciones``): el factor ``r`` de un evento de otra especialidad sale del
+documento de relaciones clínicas (R5.3) y se suman las otras solicitudes abiertas del paciente (R11). Sin
+documento (reglas-v0.1.0) el resultado es el de siempre.
 """
 
 from __future__ import annotations
@@ -42,9 +47,11 @@ from hlf_priorizacion.modelos import (
     RegistroCita,
     RegistroEvento,
     RegistroMedicion,
+    SolicitudContexto,
     TipoResultado,
 )
 from hlf_priorizacion.motor.parametros import ParametrosReglas, RangoMedicion, ReglaUmbral
+from hlf_priorizacion.repositorio.contexto import cita_egreso_inferido
 
 # Códigos de exclusión (R3) y de alertas de gestión (R7).
 EX_FALLECIDO = "EX_FALLECIDO"
@@ -59,7 +66,9 @@ ACCIONES_ALERTA = {
     "silencio_clinico": "Verificar vigencia y contactar",
     "estado_inconsistente": "Verificación administrativa",
     "fallecido_en_lista": "Egreso administrativo",
+    "sic_duplicada": "Verificar duplicidad administrativa: misma especialidad y diagnóstico",
 }
+MOTIVO_RELACIONES_NO_VALIDADAS = "relaciones clínicas no validadas"
 ESTADOS_FALLIDOS = frozenset({"no_asistio", "reprogramo", "cancelo"})
 
 
@@ -121,6 +130,7 @@ class _Eventos:
     factores: list[Factor]
     contradicciones: list[Contradiccion]
     mejoria_sin_contradiccion: list[RegistroEvento]
+    usa_documento: bool = False  # algún evento de otra especialidad tomó su r del documento de relaciones
 
 
 def _medicion_en_riesgo(m: RegistroMedicion, params: ParametrosReglas) -> bool:
@@ -135,15 +145,26 @@ def _factores_eventos(
     factores: list[Factor] = []
     contradicciones: list[Contradiccion] = []
     mejoria_ok: list[RegistroEvento] = []
+    doc = params.documento_relaciones
+    usa_documento = False
     for e in eventos:
         dt = _dias(corte, e.fecha_evento)
         w = pe.peso(e.tipo_evento, e.subtipo)
         misma = e.especialidad_evento == ctx.solicitud.especialidad
-        r = pe.relacion_misma_especialidad if misma else pe.relacion_otra_especialidad
-        aporte = w * r * math.exp(-pe.lambda_decaimiento * dt)
         detalle = f"{e.tipo_evento}: {e.subtipo}, hace {dt} días"
-        if not misma:
+        if misma:
+            r = pe.relacion_misma_especialidad
+        elif doc is None:  # reglas-v0.1.0: r fijo
+            r = pe.relacion_otra_especialidad
             detalle += f" (otra especialidad: {e.especialidad_evento})"
+        else:  # R5.3 modificada: r del documento de relaciones
+            r, listado = doc.factor_especialidad(e.especialidad_evento, ctx.solicitud.especialidad)
+            usa_documento = True
+            detalle += (
+                f" (otra especialidad: relación {e.especialidad_evento} → {ctx.solicitud.especialidad} {r:g} "
+                f"según {doc.version}{'' if listado else ', par no listado: valor por defecto'})"
+            )
+        aporte = w * r * math.exp(-pe.lambda_decaimiento * dt)
         if e.subtipo in SUBTIPOS_MEJORIA:
             en_riesgo = sorted(
                 m.id_medicion
@@ -171,7 +192,7 @@ def _factores_eventos(
             else:
                 mejoria_ok.append(e)
         factores.append(Factor(factor="evento", detalle=detalle, aporte=_r2(aporte), ids_registro=[e.id_evento]))
-    return _Eventos(factores, contradicciones, mejoria_ok)
+    return _Eventos(factores, contradicciones, mejoria_ok, usa_documento)
 
 
 def _factor_aceleracion(
@@ -270,6 +291,68 @@ def _factor_espera(ctx: ContextoPaciente, params: ParametrosReglas) -> Factor:
         aporte=_r2(aporte),
         ids_registro=[ctx.id_solicitud],
     )
+
+
+def _vigente_al_corte(ctx: ContextoPaciente, otra: SolicitudContexto) -> bool:
+    """R11.1: la otra solicitud ya estaba en la lista y no está excluida al corte por R3."""
+    if otra.fecha_ingreso_lista > ctx.fecha_corte or ctx.fallecido_a_la_fecha:
+        return False
+    if otra.estado_extraccion == "atendido":
+        if ctx.fecha_corte == ctx.fecha_extraccion:
+            return False  # R3.2
+        if cita_egreso_inferido(ctx.citas, otra.especialidad) is not None:
+            return False  # R3.3
+    return True
+
+
+@dataclass(frozen=True)
+class _OtrasSolicitudes:
+    factores: list[Factor]
+    alertas: list[AlertaGestion]
+
+
+def _otras_solicitudes(ctx: ContextoPaciente, params: ParametrosReglas) -> _OtrasSolicitudes:
+    """R11: aporte de las otras solicitudes abiertas del mismo paciente y alerta de duplicado."""
+    po, doc = params.otras_solicitudes, params.documento_relaciones
+    if po is None or doc is None:
+        return _OtrasSolicitudes([], [])
+    a = ctx.solicitud
+    clave_a = (a.fecha_ingreso_lista, a.id_solicitud)
+    brutos: list[Factor] = []
+    duplicadas: list[str] = []
+    for b in sorted(ctx.otras_solicitudes, key=lambda s: (s.fecha_ingreso_lista, s.id_solicitud)):
+        if not _vigente_al_corte(ctx, b):
+            continue
+        misma = b.especialidad == a.especialidad
+        if misma and b.diagnostico_cie10 == a.diagnostico_cie10:  # R11.2: duplicadas, sin aporte entre sí
+            if clave_a > (b.fecha_ingreso_lista, b.id_solicitud):
+                duplicadas.append(b.id_solicitud)
+            continue
+        rel = doc.factor_diagnosticos(a.diagnostico_cie10, b.diagnostico_cie10, misma)
+        if rel <= 0:
+            continue
+        brutos.append(
+            Factor(
+                factor="otra_solicitud",
+                detalle=(
+                    f"{b.diagnostico_cie10} ({b.sub_especialidad}, prioridad inicial {b.prioridad_inicial}), "
+                    f"relación {rel:g} según {doc.version}"
+                ),
+                aporte=_r2(getattr(po.pesos, b.prioridad_inicial) * rel),
+                ids_registro=[b.id_solicitud],
+            )
+        )
+    # R11.5: tope de la suma; se recortan los últimos factores hasta cumplirlo (igual que en mediciones).
+    restante = po.tope
+    factores: list[Factor] = []
+    for f in brutos:
+        aporte = _r2(min(f.aporte, max(0.0, restante)))
+        restante -= aporte
+        if aporte < f.aporte:
+            f = f.model_copy(update={"aporte": aporte, "detalle": f.detalle + f" (acotado por el tope de {po.tope:g})"})
+        factores.append(f)
+    alertas = [_alerta("sic_duplicada", duplicadas)] if duplicadas else []
+    return _OtrasSolicitudes(factores, alertas)
 
 
 def nivel_por_puntaje(puntaje: float, params: ParametrosReglas) -> Nivel:
@@ -393,8 +476,13 @@ def _confianza(
     mediciones: list[RegistroMedicion],
     banderas: list[Bandera],
     params: ParametrosReglas,
+    relaciones_no_validadas: bool = False,
 ) -> tuple[Confianza, list[str]]:
-    """R8.2 / sección 6.8. La condición de cohorte (n >= 30) no aplica: evaluar() no recibe cohortes."""
+    """R8.2 / sección 6.8. La condición de cohorte (n >= 30) no aplica: evaluar() no recibe cohortes.
+
+    ``relaciones_no_validadas``: algún factor usó un documento de relaciones que no está validado; la
+    confianza queda en ``media`` como máximo (cambio reglas-v0.2.0).
+    """
     aportan = {i for f in factores if f.aporte != 0 for i in f.ids_registro} - {ctx.id_solicitud}
     verificar = [h for h in dq if h.nivel == "verificar"]
     motivos: list[str] = []
@@ -418,11 +506,13 @@ def _confianza(
         motivos.append("hay hallazgos de calidad 'verificar' en el perfil")
     if any(b.codigo == BR_PHQ9_ALTO for b in banderas):
         motivos.append("PHQ-9 >= 20: falta el ítem 9 (ideación suicida) para completar la evaluación")
+    if relaciones_no_validadas:
+        motivos.append(MOTIVO_RELACIONES_NO_VALIDADAS)
 
     if conciliacion or en_aportes:
         motivos.append("revisar manualmente")
         return "baja", motivos
-    if recientes and not verificar:
+    if recientes and not verificar and not relaciones_no_validadas:
         return "alta", motivos
     return "media", motivos
 
@@ -503,6 +593,8 @@ def evaluar(ctx: ContextoPaciente, dq: list[HallazgoDQ], params: ParametrosRegla
         factores.append(acel)
     factores.extend(_factores_mediciones(mediciones, params))
     factores.append(_factor_espera(ctx, params))
+    otras = _otras_solicitudes(ctx, params)
+    factores.extend(otras.factores)
 
     puntaje = _r2(min(100.0, max(0.0, sum(f.aporte for f in factores))))
     calculado = nivel_por_puntaje(puntaje, params)
@@ -513,7 +605,7 @@ def evaluar(ctx: ContextoPaciente, dq: list[HallazgoDQ], params: ParametrosRegla
     if banderas:
         nivel = "critica"
 
-    alertas = _alertas(ctx, eventos, mediciones, descartados, params)
+    alertas = _alertas(ctx, eventos, mediciones, descartados, params) + otras.alertas
     tipo: TipoResultado
     if nivel != inicial or banderas:
         tipo = "priorizacion"
@@ -521,7 +613,9 @@ def evaluar(ctx: ContextoPaciente, dq: list[HallazgoDQ], params: ParametrosRegla
         tipo = "gestion"
     else:
         tipo = "sin_alerta"
-    confianza, motivos = _confianza(ctx, dq, factores, mediciones, banderas, params)
+    doc = params.documento_relaciones
+    no_validadas = doc is not None and not doc.validado and (ev.usa_documento or bool(otras.factores))
+    confianza, motivos = _confianza(ctx, dq, factores, mediciones, banderas, params, no_validadas)
 
     return Evaluacion(
         id_solicitud=ctx.id_solicitud,

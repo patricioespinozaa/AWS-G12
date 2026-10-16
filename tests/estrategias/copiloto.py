@@ -25,6 +25,7 @@ from hlf_priorizacion.copiloto.paquete import armar_paquete
 from hlf_priorizacion.copiloto.validacion import riesgo_de_paquete
 from hlf_priorizacion.lote import Configuracion, ejecutar_lote
 from hlf_priorizacion.modelos import AnalisisIA, ResultadoCohorte
+from hlf_priorizacion.motor.parametros import ParametrosReglas
 
 TIPOS_RESPUESTA = (
     "valida", "ids_inventados", "cifras_distintas", "malformada", "atributo_no_disponible", "revision_equidad"
@@ -284,9 +285,16 @@ def analisis_con_justificacion(frase: str) -> AnalisisIA:
 
 
 def correr_lote(datos: Path, salidas: Path, cortes: list[date], fecha_extraccion: date = FECHA_EXTRACCION) -> None:
+    correr_lote_con(datos, salidas, cortes, PARAMS, fecha_extraccion)
+
+
+def correr_lote_con(
+    datos: Path, salidas: Path, cortes: list[date], params: ParametrosReglas, fecha_extraccion: date = FECHA_EXTRACCION
+) -> None:
+    """Como ``correr_lote`` con una versión de reglas explícita (p. ej. reglas-v0.1.0)."""
     for corte in cortes:
         cfg = Configuracion(corte, fecha_extraccion, datos, salidas, None)
-        ejecutar_lote(cfg, PARAMS, f"lote-prueba-{corte.isoformat()}")
+        ejecutar_lote(cfg, params, f"lote-prueba-{corte.isoformat()}")
 
 
 def escribir_dataset(datos: Path, perfiles: list[dict[str, Any]]) -> Path:
@@ -300,6 +308,7 @@ __all__ = [
     "TIPOS_RESPUESTA",
     "analisis_con_justificacion",
     "correr_lote",
+    "correr_lote_con",
     "datos_de_usuario",
     "entrada_desde_datos",
     "entrada_valida",

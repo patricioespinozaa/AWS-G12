@@ -88,6 +88,9 @@ def _clave_medicion(m: RegistroMedicion) -> tuple[date, str, str, bool]:
 
 def normalizar_perfil(perfil: PerfilValido) -> ResultadoNormalizacion:
     hallazgos: list[HallazgoDQ] = []
+    # Especialidad de respaldo para eventos cuyo `detalle` no la trae: la de la PRIMERA solicitud del perfil.
+    # Con varias solicitudes (reglas-v0.2.0, R11) es una suposición: el evento queda con
+    # `especialidad_inferida=True` y la calidad de datos lo informa (`especialidad_evento_inferida`).
     especialidad_principal = perfil.lista_espera[0].especialidad
     solicitudes = [
         s.model_copy(update={"diagnostico_cie10": normalizar_cie10(s.diagnostico_cie10)}) for s in perfil.lista_espera

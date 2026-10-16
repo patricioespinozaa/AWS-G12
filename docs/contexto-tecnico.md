@@ -388,6 +388,7 @@ flowchart TD
 | Elemento | Valor referencial |
 |---|---|
 | Base | alta = 60, media = 40, baja = 20 |
+| Puntaje (`reglas-v0.2.0`) | `base + Σ eventos + aceleración + min(20, Σ mediciones) + espera + min(10, Σ otras solicitudes)`. En `reglas-v0.1.0` no existe el último término |
 | Niveles | baja < 40 ≤ media < 60 ≤ alta. `crítica` solo por bandera roja |
 | Acotado | El puntaje final se acota a [0, 100] |
 | Bajada | Bajar de nivel exige evidencia de mejoría (eventos de mejoría sin contradicción y mediciones en rango sostenidas en los últimos 90 días). Baja como máximo un nivel por ciclo. La falta de datos nunca baja la prioridad. |
@@ -410,11 +411,28 @@ Aporte de cada evento: `w(tipo, subtipo) × r × exp(−λ·Δt)`, con `Δt` en 
 | control_aps · buena respuesta | −4 |
 | cambio_farmaco · reducción dosis | −4 |
 
-- `r` = 1,0 si el evento es de la especialidad de la solicitud; 0,5 si es de otra especialidad.
+- `r` (relación evento ↔ solicitud): 1,0 si el evento es de la especialidad de la solicitud. Si es de otra especialidad, desde `reglas-v0.2.0` sale del **documento de relaciones clínicas** (`data/conocimiento/relaciones-clinicas-vX.Y.Z.yaml`, insumo estándar del hospital): el factor del par dirigido (`de` = especialidad del evento, `a` = de la solicitud) si está listado, o su valor por defecto (0,5) si no. En `reglas-v0.1.0`, 0,5 fijo. El factor usado queda en el detalle del factor.
+- Los eventos anteriores a `fecha_ingreso_lista` también aportan, con su decaimiento normal: son la historia del paciente y pueden ser el motivo de la derivación (R5.10).
 - Los aportes negativos se anulan si hay contradicción (6.6).
 - Velocidad de deterioro: si el número de eventos graves de los últimos 90 días supera al de los 90 días anteriores, se suma +5 y se explica como "aceleración".
 
 Estos pesos son los de `docs/enfoque.md` escalados ×2 a la escala 0–100.
+
+#### 6.3.1 Otras solicitudes abiertas del mismo paciente (`reglas-v0.2.0`, R11)
+
+Cada SIC del paciente considera el posible impacto de las demás, en ambos sentidos. Para la solicitud A y cada otra solicitud B:
+
+| Elemento | Regla referencial |
+|---|---|
+| Vigencia | B cuenta si `fecha_ingreso_lista_B ≤ corte` y no está excluida al corte (fallecido, atendido o atendido inferido) |
+| Duplicado | Misma especialidad y mismo CIE-10 (aunque cambie la subespecialidad): no se aportan entre sí; la más reciente recibe la alerta `sic_duplicada` |
+| Relación | `rel(A, B)` del par simétrico `{CIE-10_A, CIE-10_B}` del documento de relaciones; sin par: 0,5 si es la misma especialidad, 0 si es otra |
+| Aporte | `peso[prioridad_inicial_B] × rel(A, B)`, con pesos alta 8, media 5, baja 3, **sin decaimiento** (es un problema clínico vigente) |
+| Tope | La suma por otras solicitudes en A no supera 10 |
+| Explicación | Factor `otra_solicitud` que cita `[id_solicitud_B]` |
+| Confianza | Si el documento de relaciones no está `validado` y algún factor lo usó (evento de otra especialidad u `otra_solicitud`), se agrega "relaciones clínicas no validadas" y la confianza queda en `media` como máximo |
+
+R11 solo usa especialidad, CIE-10, prioridad inicial y fechas (regla de equidad sin cambios). El documento actual es una plantilla sintética no validada, pendiente del tema T3.
 
 ### 6.4 Mediciones
 
@@ -478,6 +496,7 @@ Solo se evalúan banderas y pisos sobre mediciones de los últimos 90 días, par
 | `alta_sin_examenes` | Nivel alta o crítica y disponibilidad `faltan_examenes` | Orden de examen o rescate |
 | `control_invisible` | Indicación de control en texto libre sin fila en la lista de controles | Crear la fila de control (requiere texto clínico; ver 8.5) |
 | `perfil_en_cuarentena` | El perfil no cumplió el contrato | Corrección en origen |
+| `sic_duplicada` (`reglas-v0.2.0`) | Otra SIC vigente del paciente con la misma especialidad y CIE-10; se emite en la más reciente | Verificar duplicidad administrativa: misma especialidad y diagnóstico |
 
 ### 6.8 Salida del motor
 
@@ -532,7 +551,7 @@ En cada ciclo se calcula, por especialidad: cuántas solicitudes cambian de nive
 |---|---|---|
 | Fuera de límites de plausibilidad | `descartar` | Ver tabla 7.1 |
 | Medición repetida en intervalo implausible (mismo tipo, mismo día, valores incompatibles) | `verificar` | Diferencia > 30 % del ancho del rango el mismo día |
-| Registro anterior a `fecha_ingreso_lista` | `info` | Se muestra como antecedente; no aporta al puntaje de la espera |
+| Registro anterior a `fecha_ingreso_lista` | `info` | Se muestra como antecedente y **sí aporta** al puntaje con su decaimiento normal (R5.10): es la historia del paciente. El hallazgo solo se informa |
 | Registro posterior a `fecha_defuncion` | `descartar` | |
 | Medición duplicada (mismo ID) | `info` | Se deduplica |
 | Citas no cronológicas en el origen | `info` | |

@@ -59,6 +59,20 @@ UNIDAD_POR_TIPO: Final[dict[str, str]] = {
     "PHQ9": "puntos",
 }
 
+# Especialidades del dataset (docs/datos.md). Las usa la validación del documento de relaciones clínicas (R11).
+# El contrato no restringe `especialidad`: un valor nuevo no manda el perfil a cuarentena.
+ESPECIALIDADES_CATALOGO: Final = frozenset(
+    {
+        "Broncopulmonar",
+        "Cardiología",
+        "Endocrinología",
+        "Gastroenterología",
+        "Neurología",
+        "Salud Mental",
+        "Traumatología",
+    }
+)
+
 # Especialidades donde aparece cada medición (docs/datos.md). Se usa para la contradicción (R5.9).
 ESPECIALIDADES_POR_MEDICION: Final[dict[str, frozenset[str]]] = {
     "presion_sistolica": frozenset({"Cardiología"}),

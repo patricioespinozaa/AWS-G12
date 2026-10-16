@@ -32,6 +32,7 @@ from hlf_priorizacion.bandeja.datos import (
     VERSION_REGLAS,
     CorteSinPropuestas,
     DatosCorte,
+    InfoRelaciones,
     ResultadoContexto,
     cargar_corte,
     cargar_repositorio,
@@ -39,8 +40,11 @@ from hlf_priorizacion.bandeja.datos import (
     comando_copiloto,
     comando_lote,
     cortes_disponibles,
+    otras_solicitudes,
     reconstruir_contexto,
+    relaciones_de_version,
     rutas,
+    versiones_disponibles,
 )
 from hlf_priorizacion.bandeja.decisiones import (
     MAX_MOTIVO,
@@ -117,8 +121,19 @@ def _logger() -> logging.Logger:
 
 
 @st.cache_data(show_spinner=False, ttl=60)
-def _cortes(raiz: str) -> list[date]:
-    return cortes_disponibles(Path(raiz), VERSION_REGLAS)
+def _cortes(raiz: str, version: str | None = None) -> list[date]:
+    """Cortes con propuestas de ``version`` (``None``: de cualquier versión de reglas)."""
+    return cortes_disponibles(Path(raiz), version)
+
+
+@st.cache_data(show_spinner=False, ttl=60)
+def _versiones(raiz: str, corte: str) -> list[str]:
+    return versiones_disponibles(Path(raiz), date.fromisoformat(corte))
+
+
+@st.cache_data(show_spinner=False)
+def _relaciones(version: str) -> InfoRelaciones:
+    return relaciones_de_version(version)
 
 
 @st.cache_data(show_spinner="Leyendo las salidas del corte…")
@@ -178,7 +193,7 @@ def _abrir(clave_tabla: str, ids: Sequence[str], corte: str | None = None) -> No
 # --------------------------------------------------------------------------- barra lateral
 
 
-def _lateral(cortes: list[date]) -> tuple[str, date | None]:
+def _lateral(raiz: Path, cortes: list[date]) -> tuple[str, date | None, str]:
     with st.sidebar:
         st.header("Bandeja HLF")
         medico = st.selectbox(
@@ -193,9 +208,17 @@ def _lateral(cortes: list[date]) -> tuple[str, date | None]:
             if st.session_state.get("lateral-corte") not in opciones:
                 st.session_state["lateral-corte"] = opciones[0]
             corte = date.fromisoformat(st.selectbox("Fecha de corte", opciones, key="lateral-corte"))
-        st.text(f"Versión de reglas: {VERSION_REGLAS}")
+        version = VERSION_REGLAS
+        if corte is not None:
+            # Versiones con propuestas en el corte elegido, de la más nueva a la más antigua; por defecto la más nueva.
+            texto_corte = corte.isoformat()
+            versiones = _seguro(lambda: _versiones(str(raiz), texto_corte), "versiones", corte) or []
+            if versiones:
+                if st.session_state.get("lateral-version") not in versiones:
+                    st.session_state["lateral-version"] = versiones[0]
+                version = st.selectbox("Versión de reglas", versiones, key="lateral-version")
         st.caption(AVISO_DEMO)
-    return medico or "", corte
+    return medico or "", corte, version
 
 
 # --------------------------------------------------------------------------- pestaña Bandeja
@@ -308,6 +331,49 @@ def _encabezado(dc: DatosCorte, ev: Evaluacion, rc: ResultadoContexto) -> None:
                 f"Tipo de resultado: `{ev.tipo_resultado}`")
     if ev.codigo_exclusion:
         st.markdown(f"Exclusión: `{ev.codigo_exclusion}`")
+
+
+def _otras_y_relaciones(dc: DatosCorte, rc: ResultadoContexto) -> None:
+    """reglas-v0.2.0 (R11): otras SIC del paciente y documento de relaciones clínicas de la versión."""
+    st.markdown("#### Otras solicitudes del paciente y relaciones clínicas")
+    info = _seguro(lambda: _relaciones(dc.version_reglas), "relaciones", dc.corte)
+    if info is not None:
+        if info.version is None:
+            st.caption(f"{dc.version_reglas} no usa documento de relaciones clínicas ni otras solicitudes (R11).")
+        else:
+            st.markdown(f"Documento de relaciones: `{info.version}` · estado `{info.estado}`")
+            if not info.validado:
+                st.warning(
+                    "⚠ El documento de relaciones clínicas no está validado por el equipo clínico (plantilla "
+                    "sintética, pendiente T3). Los factores que lo usan son referenciales."
+                )
+    if rc.contexto is None:
+        st.caption("Sin contexto reconstruido: no se pueden listar las otras solicitudes.")
+        return
+    otras = otras_solicitudes(rc.contexto)
+    if not otras:
+        st.markdown("El paciente no tiene otras solicitudes en la lista a esta fecha de corte.")
+        return
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "ID": o.id_solicitud,
+                    "Especialidad": o.especialidad,
+                    "Subespecialidad": o.sub_especialidad,
+                    "CIE-10": o.diagnostico_cie10,
+                    "Prioridad inicial": nivel(o.prioridad_inicial),
+                    "Ingreso": o.fecha_ingreso_lista.isoformat(),
+                    "Duplicada": "⚠ posible duplicado" if o.duplicada else "",
+                }
+                for o in otras
+            ]
+        ),
+        hide_index=True,
+        key="detalle-otras-solicitudes",
+    )
+    if any(o.duplicada for o in otras):
+        st.caption("Duplicada: misma especialidad y CIE-10 que esta solicitud; no se aportan puntaje entre sí.")
 
 
 def _senales(ev: Evaluacion) -> None:
@@ -599,6 +665,7 @@ def _vista_detalle(raiz: Path, datos: Path, dc: DatosCorte, decisiones: list[Dec
     ev = dc.propuestas[id_sel]
     rc = _contexto(datos, ev)
     _encabezado(dc, ev, rc)
+    _otras_y_relaciones(dc, rc)
     _senales(ev)
     _factores(ev)
     _linea_tiempo(ev, rc)
@@ -651,9 +718,10 @@ def _tabla_cambios(cambios: list[CambioEntreCortes], clave: str, corte_b: str) -
     )
 
 
-def _vista_cambios(raiz: Path, datos: Path, cortes: list[date]) -> None:
+def _vista_cambios(raiz: Path, datos: Path, version: str) -> None:
+    cortes = _seguro(lambda: _cortes(str(raiz), version), "cortes") or []
     if len(cortes) < 2:
-        st.info("Se necesitan al menos dos cortes con propuestas para comparar.")
+        st.info(f"Se necesitan al menos dos cortes con propuestas de {version} para comparar.")
         return
     opciones = [c.isoformat() for c in cortes]
     c1, c2 = st.columns(2)
@@ -664,7 +732,7 @@ def _vista_cambios(raiz: Path, datos: Path, cortes: list[date]) -> None:
         return
     if _repositorio(str(datos)) is None:
         st.warning("Dataset no disponible: no se pueden listar los registros nuevos.")
-    resultado = _seguro(lambda: _comparacion(str(raiz), str(datos), a, b, VERSION_REGLAS), "comparacion")
+    resultado = _seguro(lambda: _comparacion(str(raiz), str(datos), a, b, version), "comparacion")
     if resultado is None:
         return
     cambios, ingresos, exclusion = resultado
@@ -726,7 +794,7 @@ def main() -> None:
     _logger()
     raiz, datos = rutas(_APP.parent)
     cortes = _seguro(lambda: _cortes(str(raiz)), "cortes") or []
-    medico, corte = _lateral(cortes)
+    medico, corte, version = _lateral(raiz, cortes)
     st.title("Bandeja de priorización HLF")
     if corte is None:
         st.warning(
@@ -734,7 +802,7 @@ def main() -> None:
         )
         return
     try:
-        dc = _seguro(lambda: _corte(str(raiz), corte.isoformat(), VERSION_REGLAS), "propuestas", corte)
+        dc = _seguro(lambda: _corte(str(raiz), corte.isoformat(), version), "propuestas", corte)
     except CorteSinPropuestas as e:
         st.warning(f"El corte {corte.isoformat()} no tiene propuestas. Genérelas con: `{e.comando}`")
         return
@@ -754,7 +822,7 @@ def main() -> None:
     elif vista == "Detalle":
         _vista_detalle(raiz, datos, dc, decisiones, medico)
     elif vista == "¿Qué cambió?":
-        _vista_cambios(raiz, datos, cortes)
+        _vista_cambios(raiz, datos, version)
     else:
         _vista_cobertura(dc, decisiones)
 

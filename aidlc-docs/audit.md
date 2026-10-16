@@ -482,3 +482,40 @@
 **Context**: Flujo AI-DLC completado
 
 ---
+
+## Reapertura de Construction - U4
+**Timestamp**: 2026-10-16T06:45:00Z
+**User Input**: "Lo que queda para después del hackatón U4, desplegar en AWS. U5, el eje de box. U6, FHIR. La validación clínica de pesos y umbrales (T3) y la elección de región (T1). Todo eso está diseñado en contexto-tecnico.md . Para empezar cualquiera, basta con pedirlo y se reabre la fase de Construction de esa unidad. Sigamos implementar U4."
+**AI Response**: Se reabre Construction para U4. Functional Design en SKIP (sin lógica nueva). Verificación de solo lectura de permisos del rol WSParticipantRole con SimulatePrincipalPolicy: CloudFormation, IAM CreateRole/PassRole, Lambda, Step Functions, DynamoDB, S3, API Gateway, Cognito, CloudFront, Glue, Scheduler, Firehose, KMS y VPC permitidos; Bedrock limitado por la lista de modelos. Se advierte que la cuenta es temporal y compartida. Creado u4-infraestructura-infrastructure-design-plan.md con preguntas I-1..I-8. No se creó ningún recurso.
+**Context**: CONSTRUCTION - U4 Infrastructure Design (esperando respuestas)
+
+---
+
+## Consulta - Eventos y escenario de nueva SIC del mismo paciente
+**Timestamp**: 2026-10-16T07:00:00Z
+**User Input**: "Dado reglas establecidas en (R5 y R6) de "1. aidlc-docs\construction\u1-nucleo-motor\functional-design\business-rules.md", es posible identificar a los eventos como registros clínicos existentes, sea entregada-aportada por el mismo paciente, hospital o por otras SIC del mismo paciente? Si fuese así, es posible crear un escenario donde, mostrar la variación de puntuación al ingresar una nueva solicitud a la lista de espera de algún paciente que ya se encuentra en la lista de espera? Que sean solicitudes de la misma especialidad pero diferente subespecialidad para no establecer duplicación."
+**AI Response**: Experimento en memoria (sin escribir archivos): PAC-HLF-00002 + nueva SIC IC-HLF-90002 (Cardiología / Insuficiencia cardíaca / I50 / media / ingreso 2026-08-01), corte 2026-08-10. IC-HLF-00002 sin cambio (75,05, crítica); IC-HLF-90002 89,77, crítica. Hallazgos: (1) los eventos no tienen origen (paciente/hospital/APS); (2) otra SIC no aporta puntaje (solo contexto del copiloto); (3) eventos anteriores al ingreso de la nueva SIC suman completos, en contradicción con la tabla de calidad de datos de la sección 7 ("anterior al ingreso: info, no aporta"); nunca se ejercitó porque el dataset tiene 1 SIC por paciente; (4) la acumulación de SIC (negocio 5.1) y la deduplicación (5.3) no están implementadas. U4 sigue esperando respuestas I-1..I-8.
+**Context**: CONSTRUCTION - U4 en pausa; consulta sobre U1
+
+---
+
+## U1 - Cambio de reglas v0.2.0 (solicitudes del mismo paciente)
+**Timestamp**: 2026-10-16T07:15:00Z
+**User Input**: "1. Dejamos U4 al lado por mientras. 2. En " Escenario: una nueva SIC para un paciente que ya está en espera", al ingresar una nueva solicitud "IC-HLF-90002 (nueva)" considere posible impacto generado por "IC-HLF-00002 antes" y que también "IC-HLF-00002" considira posible impacto de un nuevo evento o solicitud "IC-HLF-90002 (nueva)". 3. Actualizar esta relación en reglas y agregarlo en códigos asociados. Una vez termine, avísame con todo el detalle sobre los cambios. 4. Se espera que este un documento pre-existente en el cual señala posibles relaciones entre eventos de la misma incluso diferentes especialidades elaborado por parte del hospital para complementar dicha lógica. (Considera este como input estándar) 5. Avísame con todo el detalle sobre los cambios."
+**AI Response**: U4 en pausa. Se reabre Functional Design de U1 por pedido explícito del usuario de implementar y avisar al terminar (sin gate intermedio de preguntas; decisiones documentadas como referenciales). Agregado al diseño: R5.3 modificada (factor por par de especialidades desde el documento), R5.10 (eventos previos al ingreso aportan), R11 (otras solicitudes abiertas, simétrica, sin decaimiento, duplicados por especialidad + CIE-10, tope 10) y propiedades. Creado el insumo data/conocimiento/relaciones-clinicas-v0.1.0.yaml como plantilla sintética no validada. Se lanza workflow de implementación + revisión.
+**Context**: CONSTRUCTION - U1 (cambio de reglas)
+
+---
+## U1 - Code Generation reglas-v0.2.0 (implementación)
+**Timestamp**: 2026-10-16T11:13:00Z
+**User Input**: "(sin entrada nueva: paso de implementación del workflow lanzado en la entrada anterior)"
+**AI Response**: Implementado reglas-v0.2.0 como versión por defecto (reglas-v0.1.0 sin cambios): carga fail-closed del documento de relaciones (motor/relaciones.py), R5.3 desde el documento, R11 con factor otra_solicitud, alerta sic_duplicada, tope 10 y confianza máxima media con "relaciones clínicas no validadas"; oráculo de referencia actualizado; bandeja con selector de versión y otras SIC en el Detalle; escenario sintético data/synthetic/escenario-multi-sic/. Escenario al 2026-08-10: IC-SIN-00001 79,85 -> 84,35 (+4,5), IC-SIN-00002 97,27 (+2,7). Lote real 2026-10-13 en v0.2.0: 500/500 idénticas a v0.1.0 salvo version_reglas. ruff y mypy limpios, pytest 337 passed + 1 deselected, pip-audit sin vulnerabilidades. Sin llamadas a Bedrock; sin commit. Detalle en construction/u1-nucleo-motor/code/resumen-v0.2.0.md.
+**Context**: CONSTRUCTION - U1 Code Generation (cambio de reglas v0.2.0), pendiente de revisión
+---
+
+## U1 reglas-v0.2.0 - Resultado
+**Timestamp**: 2026-10-16T08:30:00Z
+**AI Response**: Workflow wf_ad45adfd4b964849 completado; revisión APPROVED con 5 hallazgos no bloqueantes. Verificación independiente del orquestador: pytest 337 passed, 1 deselected; reglas-v0.1.0.yaml sin cambios. El orquestador corrigió el hallazgo 3 (diseño alineado con el código: motivo de confianza solo cuando se usa el documento; escenario de referencia = sintético). Pendientes: commit de data/conocimiento y data/synthetic (hallazgo 1), versión por defecto de la bandeja frente a análisis existentes (2), ruta del documento para U4 (4), marca de duplicado en el Detalle sin aplicar vigencia R11.1 (5).
+**Context**: CONSTRUCTION - U1 (cambio de reglas, esperando aprobación)
+
+---

@@ -1,0 +1,96 @@
+[
+  {
+    "id_paciente": "PAC-SIN-00001",
+    "paciente": {
+      "nombre_fantasia": "Paciente Sintetico 001",
+      "edad": 58,
+      "sexo": "F",
+      "comuna": "Comuna Sintética",
+      "prevision": "Previsión Sintética",
+      "nivel_socioeconomico": "no_informado",
+      "fallecido": false,
+      "fecha_defuncion": null
+    },
+    "lista_espera": [
+      {
+        "id_solicitud": "IC-SIN-00001",
+        "especialidad": "Cardiología",
+        "sub_especialidad": "Cardiología adulto",
+        "diagnostico_cie10": "I20",
+        "diagnostico_texto": "Angina de pecho",
+        "prioridad_inicial": "baja",
+        "fecha_ingreso_lista": "2025-11-08",
+        "origen_derivacion": "CESFAM/APS",
+        "estado": "en_espera"
+      },
+      {
+        "id_solicitud": "IC-SIN-00002",
+        "especialidad": "Cardiología",
+        "sub_especialidad": "Insuficiencia cardíaca",
+        "diagnostico_cie10": "I50",
+        "diagnostico_texto": "Insuficiencia cardíaca",
+        "prioridad_inicial": "media",
+        "fecha_ingreso_lista": "2026-08-01",
+        "origen_derivacion": "Hospitalización",
+        "estado": "en_espera"
+      }
+    ],
+    "eventos_clinicos": [
+      {
+        "id_evento": "EV-900001",
+        "fecha_evento": "2026-07-20",
+        "tipo_evento": "visita_urgencia",
+        "subtipo": "triage ESI 2",
+        "severidad": "grave",
+        "detalle": "triage ESI 2 (Cardiología)"
+      },
+      {
+        "id_evento": "EV-900002",
+        "fecha_evento": "2026-08-03",
+        "tipo_evento": "visita_urgencia",
+        "subtipo": "descompensación",
+        "severidad": "moderada",
+        "detalle": "descompensación (Endocrinología)"
+      },
+      {
+        "id_evento": "EV-900003",
+        "fecha_evento": "2026-08-06",
+        "tipo_evento": "hospitalizacion",
+        "subtipo": "ingreso hospitalario",
+        "severidad": "grave",
+        "detalle": "ingreso hospitalario (Cardiología)"
+      }
+    ],
+    "mediciones": [
+      {
+        "fecha_medicion": "2025-12-10",
+        "tipo_medicion": "presion_sistolica",
+        "valor": 118,
+        "unidad": "mmHg",
+        "fuera_de_rango": false
+      },
+      {
+        "fecha_medicion": "2026-03-05",
+        "tipo_medicion": "presion_sistolica",
+        "valor": 124,
+        "unidad": "mmHg",
+        "fuera_de_rango": false
+      },
+      {
+        "fecha_medicion": "2026-05-14",
+        "tipo_medicion": "presion_sistolica",
+        "valor": 131,
+        "unidad": "mmHg",
+        "fuera_de_rango": false
+      },
+      {
+        "fecha_medicion": "2026-07-02",
+        "tipo_medicion": "presion_sistolica",
+        "valor": 158,
+        "unidad": "mmHg",
+        "fuera_de_rango": true
+      }
+    ],
+    "citaciones": []
+  }
+]

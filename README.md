@@ -13,11 +13,23 @@ uv run hlf-lote --fecha-corte 2026-10-13        # evalúa todas las solicitudes 
 uv run hlf-lote --fecha-corte 2026-07-20 --datos data/dataset_hlf_ambulatorio --salidas salidas
 ```
 
-El lote valida cada perfil (los inválidos van a cuarentena), arma el contexto con solo lo que se sabía a la fecha de corte, calcula el puntaje y el nivel propuesto con `reglas-v0.1.0` y escribe en `salidas/` (ignorado por git): propuestas en Parquet, hallazgos de calidad, cohortes, cuarentena, un resumen y la auditoría. Re-ejecutar el mismo corte no duplica nada. Termina con código distinto de 0 si alguna solicitud no quedó evaluada ni en cuarentena.
+El lote valida cada perfil (los inválidos van a cuarentena), arma el contexto con solo lo que se sabía a la fecha de corte, calcula el puntaje y el nivel propuesto con `reglas-v0.2.0` (versión por defecto) y escribe en `salidas/` (ignorado por git): propuestas en Parquet, hallazgos de calidad, cohortes, cuarentena, un resumen y la auditoría. Re-ejecutar el mismo corte no duplica nada. Termina con código distinto de 0 si alguna solicitud no quedó evaluada ni en cuarentena. Para la versión anterior: `--reglas src/hlf_priorizacion/motor/reglas/reglas-v0.1.0.yaml` (cada versión escribe en su propia partición `version_reglas=…`).
+
+`reglas-v0.2.0` agrega dos cosas a `reglas-v0.1.0`: el factor de relación de un evento de otra especialidad sale del documento de relaciones clínicas, y cada SIC del paciente suma el posible impacto de sus otras SIC abiertas (factor `otra_solicitud`, alerta `sic_duplicada` si coinciden especialidad y CIE-10). El documento de relaciones es un insumo estándar versionado en `data/conocimiento/relaciones-clinicas-vX.Y.Z.yaml` (carpeta configurable con `HLF_CONOCIMIENTO`). La versión actual es una plantilla sintética no validada, pendiente de reemplazo por el documento del HLF. En el dataset actual (una SIC por paciente) los resultados son idénticos a `reglas-v0.1.0`.
+
+Escenario sintético de varias SIC del mismo paciente (`data/synthetic/escenario-multi-sic/`, versionado):
+
+```powershell
+uv run hlf-lote --fecha-corte 2026-08-10 --datos data/synthetic/escenario-multi-sic --salidas $env:TEMP\hlf-multi-sic\dos
+# "antes", con una sola SIC: el lote lee perfiles.json, así que se copia la variante a otra carpeta
+New-Item -ItemType Directory $env:TEMP\hlf-multi-sic\una-datos -Force | Out-Null
+Copy-Item data\synthetic\escenario-multi-sic\perfiles-una-sic.json $env:TEMP\hlf-multi-sic\una-datos\perfiles.json
+uv run hlf-lote --fecha-corte 2026-08-10 --datos $env:TEMP\hlf-multi-sic\una-datos --salidas $env:TEMP\hlf-multi-sic\una
+```
 
 ## Cómo ejecutar el copiloto IA (U2)
 
-Analiza con Amazon Bedrock las solicitudes que el lote dejó en `priorizacion` y guarda un análisis citado y validado, siempre pendiente de revisión médica. Usa la cadena estándar de credenciales de AWS y exige que existan las salidas de `hlf-lote` para cada fecha (si faltan, muestra los comandos y no llama a Bedrock).
+Analiza con Amazon Bedrock las solicitudes que el lote dejó en `priorizacion` y guarda un análisis citado y validado, siempre pendiente de revisión médica. Usa la cadena estándar de credenciales de AWS y exige que existan las salidas de `hlf-lote` para cada fecha (si faltan, muestra los comandos y no llama a Bedrock). Trabaja sobre la versión de reglas por defecto (`reglas-v0.2.0`); con `--reglas` se elige otra.
 
 ```powershell
 uv run hlf-copiloto --fecha-corte 2026-08-10
@@ -37,7 +49,7 @@ Interfaz en Streamlit para el médico contralor: bandeja ordenada, detalle de ca
 uv run streamlit run app/bandeja.py     # http://127.0.0.1:8501 (solo localhost, sin telemetría)
 ```
 
-Sin login: es una demo local con datos sintéticos y médicos ficticios (`app/config_demo.py`). Para usar otras carpetas: `HLF_SALIDAS` y `HLF_DATOS`. Si un corte no tiene propuestas o análisis, la interfaz muestra el comando exacto (`uv run hlf-lote --fecha-corte AAAA-MM-DD`, `uv run hlf-copiloto --fecha-corte AAAA-MM-DD`).
+Sin login: es una demo local con datos sintéticos y médicos ficticios (`app/config_demo.py`). Para usar otras carpetas: `HLF_SALIDAS` y `HLF_DATOS`. La barra lateral tiene un selector "Versión de reglas" con las versiones que tienen propuestas en el corte elegido (por defecto la más nueva). Los análisis del copiloto ya generados son de `reglas-v0.1.0`: para verlos, elija esa versión. Si un corte no tiene propuestas o análisis, la interfaz muestra el comando exacto (`uv run hlf-lote --fecha-corte AAAA-MM-DD`, `uv run hlf-copiloto --fecha-corte AAAA-MM-DD`).
 
 Recorrido de la demo:
 

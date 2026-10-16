@@ -41,6 +41,7 @@ TipoFactor = Literal[
     "medicion_tendencia",
     "aceleracion",
     "espera",
+    "otra_solicitud",  # reglas-v0.2.0, R11
 ]
 ESTADO_REVISION_INICIAL: Literal["pendiente_revision_medica"] = "pendiente_revision_medica"
 
