@@ -32,7 +32,8 @@ def handler(event, context):
         SecretId=os.environ["HLF_SERVICIO_SECRET_ID"])["SecretString"])
     cuerpo = {"bucket": objeto.get("bucketName", ""), "clave": objeto.get("objectKey", ""), "resultado": resultado}
     req = urllib.request.Request(url + "/api/interno/examenes/escaneo", method="POST", data=json.dumps(cuerpo).encode(),
-                                 headers={"Content-Type": "application/json", "X-HLF-Servicio": secreto})
+                                 headers={"Content-Type": "application/json", "X-HLF-Servicio": secreto,
+                                          "X-Correlation-Id": getattr(context, "aws_request_id", "")})
     with urllib.request.urlopen(req, timeout=20) as r:
         respuesta = json.loads(r.read())
     log.info(json.dumps({"evento": "escaneo_examen", "resultado": resultado, "id_evidencia": respuesta.get("id_evidencia")}))

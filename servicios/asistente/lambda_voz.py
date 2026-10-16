@@ -39,7 +39,8 @@ def handler(event, context):
     try:
         req = urllib.request.Request(_url_api() + "/api/interno/asistente/voz", method="POST",
                                      data=json.dumps({"evento_lex": event}).encode(),
-                                     headers={"Content-Type": "application/json", "X-HLF-Servicio": _secreto()})
+                                     headers={"Content-Type": "application/json", "X-HLF-Servicio": _secreto(),
+                                              "X-Correlation-Id": getattr(context, "aws_request_id", "")})
         with urllib.request.urlopen(req, timeout=25) as r:
             respuesta = json.loads(r.read())
     except Exception as e:  # noqa: BLE001 — nunca dejar al paciente sin respuesta: se transfiere

@@ -173,6 +173,13 @@ class ConsultaStack(Stack):
                                     resources=[kb_arn, kb_paciente_arn]),
             ])
 
+        if datos.clave is not None:        # F0013: bucket con clave propia → leer y escribir requiere la clave
+            datos.clave.grant_decrypt(rol_kb)
+            kms_datos = iam.PolicyStatement(sid="ClaveDatos", actions=["kms:Decrypt", "kms:GenerateDataKey"],
+                                            resources=[datos.clave.key_arn])
+            self.politica_consulta.add_statements(kms_datos)
+            self.politica_preparacion.add_statements(kms_datos)
+
         CfnOutput(self, "SalidaKb", value=self.kb.attr_knowledge_base_id)
         CfnOutput(self, "SalidaFuenteKb", value=self.fuente.attr_data_source_id)
         CfnOutput(self, "SalidaKbPaciente", value=self.kb_paciente.attr_knowledge_base_id)

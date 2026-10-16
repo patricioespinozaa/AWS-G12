@@ -16,6 +16,7 @@ from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_kms as kms
 from aws_cdk import aws_logs as logs
 from constructs import Construct
 
@@ -26,6 +27,7 @@ from .asistente import AsistenteStack
 from .consulta import ConsultaStack
 from .ia import IaStack
 from .nocturno import ConsolidacionNocturna
+from .comun import retencion
 from .red import RedStack
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -42,8 +44,19 @@ class BackendStack(Stack):
         super().__init__(scope, id, description="HLF priorización: backend (ECS Fargate + ALB interno)", **kwargs)
 
         cluster = ecs.Cluster(self, "Cluster", vpc=red.vpc, container_insights_v2=ecs.ContainerInsights.ENABLED)
-        grupo_logs = logs.LogGroup(self, "Logs", retention=_retencion(entorno.dias_logs),
-                                   removal_policy=RemovalPolicy.DESTROY)
+        clave_logs = None
+        if entorno.cmk:                    # F0013: logs con clave propia en el entorno con datos reales
+            clave_logs = kms.Key(self, "ClaveLogs", alias=f"alias/hlf-{entorno.nombre}-logs", enable_key_rotation=True,
+                                 description="Logs del backend (F0013)")
+            clave_logs.add_to_resource_policy(iam.PolicyStatement(
+                principals=[iam.ServicePrincipal(f"logs.{self.region}.amazonaws.com")],
+                actions=["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"],
+                resources=["*"],
+                conditions={"ArnLike": {"kms:EncryptionContext:aws:logs:arn":
+                                        f"arn:aws:logs:{self.region}:{self.account}:log-group:*"}}))
+        grupo_logs = logs.LogGroup(self, "Logs", retention=retencion(entorno.dias_logs), encryption_key=clave_logs,
+                                   removal_policy=RemovalPolicy.RETAIN if entorno.retener_datos else RemovalPolicy.DESTROY)
+        self.cluster, self.grupo_logs = cluster, grupo_logs
 
         tarea = ecs.FargateTaskDefinition(
             self, "Tarea",
@@ -126,12 +139,13 @@ class BackendStack(Stack):
         for prefijo in ("canal/evidencias", "cargas"):
             datos.bucket.grant_put(tarea.task_role, f"{entorno.prefijo_s3}/{prefijo}/*")
         con_estado_en_base = datos.rds is not None
+        self.tareas_deseadas = 2 if con_estado_en_base else 1
 
         servicio = ecs.FargateService(
             self, "Servicio",
             cluster=cluster,
             task_definition=tarea,
-            desired_count=2 if con_estado_en_base else 1,
+            desired_count=self.tareas_deseadas,
             min_healthy_percent=100 if con_estado_en_base else 0,
             max_healthy_percent=200 if con_estado_en_base else 100,
             assign_public_ip=red.ip_publica_backend,
@@ -151,7 +165,8 @@ class BackendStack(Stack):
             drop_invalid_header_fields=True,
         )
         escucha = self.alb.add_listener("Http", port=80, open=False)
-        escucha.add_targets(
+        self.servicio = servicio
+        self.objetivo = escucha.add_targets(
             "Api",
             port=8000,
             protocol=elbv2.ApplicationProtocol.HTTP,
@@ -187,7 +202,3 @@ class BackendStack(Stack):
         CfnOutput(self, "SalidaIpPublica", value="ENABLED" if red.ip_publica_backend else "DISABLED")
         CfnOutput(self, "SalidaGrupoLogs", value=grupo_logs.log_group_name)
 
-
-def _retencion(dias: int) -> logs.RetentionDays:
-    return {7: logs.RetentionDays.ONE_WEEK, 30: logs.RetentionDays.ONE_MONTH,
-            365: logs.RetentionDays.ONE_YEAR}.get(dias, logs.RetentionDays.ONE_MONTH)

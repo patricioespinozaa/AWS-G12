@@ -336,3 +336,108 @@ def test_examenes_cifrados_escaneados_y_sin_descarga_de_amenazas(plantillas):
         assert "HLF_EXAMENES_KMS_KEY_ID" in variables and variables.get("HLF_EXAMENES_ESCANEO") == "1"
     else:
         assert not planes
+
+
+def test_observabilidad_tablero_alarmas_y_presupuesto(plantillas):
+    """F0013: tablero `hlf-<entorno>`, alarmas de API, backend y Lambdas al tema SNS; en demo también RDS, corrida
+    nocturna (log + EventBridge) y presupuesto con alertas al 50, 80 y 100 %."""
+    entorno, t = plantillas
+    o = t["observabilidad"]
+    o.has_resource_properties("AWS::CloudWatch::Dashboard", {"DashboardName": f"hlf-{entorno}"})
+    nombres = {a["Properties"]["AlarmName"] for a in _recursos(o, "AWS::CloudWatch::Alarm").values()}
+    base = {f"hlf-{entorno}-{n}" for n in ("api-5xx", "backend-tareas", "lambda-whatsapp")}
+    assert base <= nombres
+    con_rds = {f"hlf-{entorno}-{n}" for n in ("rds-almacenamiento", "nocturno-fallido", "lambda-voz", "lambda-escaneo-examenes")}
+    assert (con_rds <= nombres) == (entorno == "demo")
+    assert all(a["Properties"]["AlarmActions"] for a in _recursos(o, "AWS::CloudWatch::Alarm").values())
+    tareas = next(a for a in _recursos(o, "AWS::CloudWatch::Alarm").values()
+                  if a["Properties"]["AlarmName"].endswith("backend-tareas"))["Properties"]
+    assert tareas["TreatMissingData"] == "breaching" and tareas["EvaluationPeriods"] * tareas["Period"] <= 600
+    presupuestos = list(_recursos(o, "AWS::Budgets::Budget").values())
+    if entorno == "demo":
+        (p,) = presupuestos
+        umbrales = sorted(n["Notification"]["Threshold"] for n in p["Properties"]["NotificationsWithSubscribers"])
+        assert umbrales == [50, 80, 100]
+        o.has_resource_properties("AWS::Logs::MetricFilter", {"MetricTransformations": [Match.object_like(
+            {"MetricName": "NocturnoFallido"})]})
+        (regla,) = _recursos(o, "AWS::Events::Rule").values()
+        assert regla["Properties"]["EventPattern"]["detail"]["containers"]["name"] == ["nocturno"]
+    else:
+        assert not presupuestos
+    # Sin correo en el repo: la suscripción solo aparece si HLF_CORREO_ALARMAS está definido al desplegar
+    assert not _recursos(o, "AWS::SNS::Subscription")
+
+
+def test_seguridad_waf_y_cloudtrail_solo_donde_se_activan(plantillas):
+    """F0013: WAF y CloudTrail tienen costo fijo; ni dev ni demo los crean (decisión del plan)."""
+    _, t = plantillas
+    assert not _recursos(t["seguridad"], "AWS::WAFv2::WebACL")
+    assert not _recursos(t["seguridad"], "AWS::CloudTrail::Trail")
+    (dist,) = _recursos(t["frontend"], "AWS::CloudFront::Distribution").values()
+    assert "WebACLId" not in dist["Properties"]["DistributionConfig"]
+
+
+@pytest.fixture(scope="module")
+def piloto(tmp_path_factory, monkeypatch_module):
+    monkeypatch_module.setenv("HLF_REGION", "us-east-1")
+    monkeypatch_module.setenv("HLF_CUENTA", "123456789012")
+    monkeypatch_module.setenv("HLF_CORREO_ALARMAS", "equipo@example.org")
+    dist = tmp_path_factory.mktemp("dist_piloto")
+    (dist / "index.html").write_text("<!doctype html><title>HLF</title>", encoding="utf-8")
+    app = cdk.App(context={"entorno": "piloto"})
+    stacks = construir(app, "piloto", dist=dist)
+    return {nombre: Template.from_stack(s) for nombre, s in stacks.items()}
+
+
+@pytest.fixture(scope="module")
+def monkeypatch_module():
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
+
+
+def test_piloto_cumple_la_lista_previa_a_datos_reales(piloto):
+    """F0013, lista de verificación: NAT y tareas privadas, CMK en datos y logs, WAF con inyección SQL y solo Chile,
+    CloudTrail multirregión con bloqueo de objetos, AWS Backup con copia en otra región, RDS 35 días, rotación del
+    secreto, MFA obligatorio y logs de un año."""
+    t = piloto
+    assert _recursos(t["red"], "AWS::EC2::NatGateway")
+    tarea = next(x for x in _recursos(t["backend"], "AWS::ECS::TaskDefinition").values()
+                 if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
+    assert tarea                                                               # sigue habiendo API
+    (servicio,) = _recursos(t["backend"], "AWS::ECS::Service").values()
+    assert servicio["Properties"]["NetworkConfiguration"]["AwsvpcConfiguration"]["AssignPublicIp"] == "DISABLED"
+    bucket = next(b for b in _recursos(t["datos"], "AWS::S3::Bucket").values() if "CorsConfiguration" in b["Properties"])
+    regla = bucket["Properties"]["BucketEncryption"]["ServerSideEncryptionConfiguration"][0]
+    assert regla["ServerSideEncryptionByDefault"]["SSEAlgorithm"] == "aws:kms"
+    (base,) = _recursos(t["datos"], "AWS::RDS::DBInstance").values()
+    assert "KmsKeyId" in base["Properties"] and base["Properties"]["BackupRetentionPeriod"] == 35
+    assert _recursos(t["datos"], "AWS::SecretsManager::RotationSchedule")
+    (grupo,) = [g for g in _recursos(t["backend"], "AWS::Logs::LogGroup").values()]
+    assert grupo["Properties"]["RetentionInDays"] == 365 and "KmsKeyId" in grupo["Properties"]
+    (acl,) = _recursos(t["seguridad"], "AWS::WAFv2::WebACL").values()
+    reglas = {r["Name"]: r for r in acl["Properties"]["Rules"]}
+    assert {"SoloChile", "LimitePorIp", "AWSManagedRulesCommonRuleSet", "AWSManagedRulesKnownBadInputsRuleSet",
+            "AWSManagedRulesSQLiRuleSet"} <= set(reglas) and acl["Properties"]["Scope"] == "CLOUDFRONT"
+    (dist,) = _recursos(t["frontend"], "AWS::CloudFront::Distribution").values()
+    assert "WebACLId" in dist["Properties"]["DistributionConfig"]
+    (trail,) = _recursos(t["seguridad"], "AWS::CloudTrail::Trail").values()
+    assert trail["Properties"]["IsMultiRegionTrail"] and trail["Properties"]["EnableLogFileValidation"]
+    auditoria = next(b for b in _recursos(t["seguridad"], "AWS::S3::Bucket").values() if b["Properties"].get("ObjectLockEnabled"))
+    assert auditoria["Properties"]["ObjectLockConfiguration"]["Rule"]["DefaultRetention"]["Mode"] == "GOVERNANCE"
+    (plan,) = _recursos(t["seguridad"], "AWS::Backup::BackupPlan").values()
+    (regla_respaldo,) = plan["Properties"]["BackupPlan"]["BackupPlanRule"]
+    assert "us-west-2" in json.dumps(regla_respaldo["CopyActions"])
+    assert "respaldo_copia" in t and _recursos(t["respaldo_copia"], "AWS::Backup::BackupVault")
+    t["identidad"].has_resource_properties("AWS::Cognito::UserPool", {"MfaConfiguration": "ON"})
+    t["observabilidad"].has_resource_properties("AWS::SNS::Subscription", {"Protocol": "email"})
+    assert "voz" not in t                                                      # sin voz en el piloto
+
+
+def test_todo_lleva_etiquetas_proyecto_y_entorno(piloto):
+    """F0013, criterio: ningún recurso etiquetable sin `proyecto` y `entorno` en el entorno real."""
+    for nombre, t in piloto.items():
+        for id_logico, r in t.to_json()["Resources"].items():
+            etiquetas = r.get("Properties", {}).get("Tags")
+            if isinstance(etiquetas, list) and etiquetas and isinstance(etiquetas[0], dict) and "Key" in etiquetas[0]:
+                claves = {e["Key"] for e in etiquetas}
+                assert {"proyecto", "entorno"} <= claves, (nombre, id_logico)
