@@ -143,7 +143,8 @@ class Registro(Protocol):
     def decisiones_por_solicitud(self) -> dict[str, list[Decision]]: ...
     def agregar_evidencia(self, id_paciente: str, fecha_examen: date, tipo: str, valor: float, lugar: str,
                           archivo: "ArchivoGuardado | None", fecha_recepcion: date) -> str: ...
-    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str): ...
+    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str,
+                          valores: dict | None = None): ...
     def evidencias(self) -> pd.DataFrame: ...
     def agregar_mensaje(self, id_paciente: str, fecha: date, tipo: str, detalle: str) -> str: ...
     def revisar_mensaje(self, id_mensaje: str, estado: str, revisado_por: str): ...
@@ -325,11 +326,18 @@ class RegistroSQLite:
                        fecha_recepcion.isoformat(), "pendiente", None, None, None))
             return ide
 
-    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str):
+    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str,
+                          valores: dict | None = None):
+        """`valores` (F0012): tipo_medicion, valor, fecha_examen y lugar que confirma la persona al validar un examen
+        leído con IA. Lo que no viene se mantiene."""
+        v = valores or {}
         with self.conexion() as c:
-            c.execute("UPDATE evidencia_externa SET estado = ?, revisado_por = ?, fecha_revision = ?, nota = ? "
-                      "WHERE id_evidencia = ?", (estado, revisado_por, datetime.now().isoformat(timespec="seconds"),
-                                                 nota, id_evidencia))
+            c.execute("UPDATE evidencia_externa SET estado = ?, revisado_por = ?, fecha_revision = ?, nota = ?, "
+                      "tipo_medicion = coalesce(?, tipo_medicion), valor = coalesce(?, valor), "
+                      "fecha_examen = coalesce(?, fecha_examen), lugar = coalesce(?, lugar) WHERE id_evidencia = ?",
+                      (estado, revisado_por, datetime.now().isoformat(timespec="seconds"), nota,
+                       v.get("tipo_medicion"), v.get("valor"),
+                       v["fecha_examen"].isoformat() if v.get("fecha_examen") else None, v.get("lugar"), id_evidencia))
 
     def evidencias(self) -> pd.DataFrame:
         return self.consulta("SELECT * FROM evidencia_externa ORDER BY id_evidencia")

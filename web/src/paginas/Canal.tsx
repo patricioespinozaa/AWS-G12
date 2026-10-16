@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { postJSON, Registro, useApi } from "../api";
 import { Derivaciones, SimuladorAsistente } from "../componentes/SimuladorAsistente";
+import { subirExamen, ValidacionExamen } from "../componentes/ValidacionExamen";
 import { Aviso, Cargando, NivelBadge } from "../componentes/comunes";
 import { useApp } from "../contexto";
 import { ETIQUETA_DISP, num } from "../utils";
@@ -126,7 +127,10 @@ function FormExamen({ idPaciente, onListo }: { idPaciente: string; onListo: (t: 
   const [fecha, setFecha] = useState(corte);
   const [lugar, setLugar] = useState("Laboratorio privado");
   const [archivo, setArchivo] = useState<{ nombre: string; base64: string } | null>(null);
+  const [archivoDirecto, setArchivoDirecto] = useState<File | null>(null);
+  const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const directo = meta?.base_de_datos === "rds";             // F0012: subida a S3 y lectura asistida
   const tipoMeta = meta?.tipos_medicion.find((t) => t.tipo === tipo);
   const leerArchivo = (f: File | undefined) => {
     if (!f) return setArchivo(null);
@@ -135,6 +139,18 @@ function FormExamen({ idPaciente, onListo }: { idPaciente: string; onListo: (t: 
     lector.readAsDataURL(f);
   };
   const enviar = async () => {
+    if (directo) {
+      if (!archivoDirecto) return setError("Elige el PDF o la foto del examen.");
+      setSubiendo(true);
+      try {
+        onListo(await subirExamen(idPaciente, archivoDirecto, lugar));
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setSubiendo(false);
+      }
+      return;
+    }
     if (valor === "" || Number.isNaN(Number(valor))) return setError("Ingresa el valor del examen.");
     try {
       const r = await postJSON<{ respuesta: string }>("/api/canal/evidencias", {
@@ -147,6 +163,15 @@ function FormExamen({ idPaciente, onListo }: { idPaciente: string; onListo: (t: 
     }
   };
   return (
+    directo ? (
+      <div className="formulario-chat">
+        <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setArchivoDirecto(e.target.files?.[0] ?? null)} />
+        <input value={lugar} onChange={(e) => setLugar(e.target.value)} placeholder="Lugar del examen" />
+        <small>El archivo va directo a S3, cifrado. Se escanea, se lee con IA y una persona confirma los datos antes de usarlos.</small>
+        {error && <small style={{ color: "#c0392b" }}>{error}</small>}
+        <button className="boton primario" onClick={enviar} disabled={subiendo}>{subiendo ? "Subiendo…" : "Enviar examen"}</button>
+      </div>
+    ) : (
     <div className="formulario-chat">
       <div className="fila">
         <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
@@ -161,6 +186,7 @@ function FormExamen({ idPaciente, onListo }: { idPaciente: string; onListo: (t: 
       {error && <small style={{ color: "#c0392b" }}>{error}</small>}
       <button className="boton primario" onClick={enviar}>Enviar examen</button>
     </div>
+    )
   );
 }
 
@@ -187,12 +213,17 @@ function Validacion() {
   const { data, error } = useApi<{ evidencias: Registro[]; alarmas: Registro[] }>("/api/canal-pendientes", version);
   const [resultados, setResultados] = useState<Registro[]>([]);
   const [ocupado, setOcupado] = useState<string | null>(null);
-  const revisar = async (tipo: "evidencias" | "mensajes", id: string, estado: "validada" | "rechazada", nombre: string) => {
+  const [falla, setFalla] = useState<string | null>(null);
+  const revisar = async (tipo: "evidencias" | "mensajes", id: string, estado: "validada" | "rechazada", nombre: string,
+                         valores: Registro = {}) => {
     setOcupado(id);
+    setFalla(null);
     try {
-      const r = await postJSON<Registro>(`/api/canal/${tipo}/${id}/revision`, { estado, corte });
+      const r = await postJSON<Registro>(`/api/canal/${tipo}/${id}/revision`, { estado, corte, ...valores });
       setResultados([{ ...r, id, estado, nombre }, ...resultados]);
       refrescar();
+    } catch (e) {
+      setFalla((e as Error).message);
     } finally {
       setOcupado(null);
     }
@@ -203,22 +234,14 @@ function Validacion() {
         <h2>Bandeja de validación</h2>
         <p className="suave">La Administradora valida lo que envía el paciente. Al validar, el dato entra a la ficha consolidada y la prioridad del paciente se reevalúa de inmediato.</p>
         {error && <Aviso tipo="error">{error}</Aviso>}
+        {falla && <Aviso tipo="error">{falla}</Aviso>}
         {!data ? <Cargando /> : data.evidencias.length + data.alarmas.length === 0 ? (
           <Aviso tipo="info">No hay evidencia pendiente. Envía un examen o un síntoma desde el teléfono de la izquierda.</Aviso>
         ) : (
           <>
             {data.evidencias.map((e) => (
-              <div key={e.id_evidencia} className="tarjeta compacta pila">
-                <div className="fila entre">
-                  <b>📄 {e.id_evidencia} · {e.nombre}</b>
-                  <small>recibido {e.fecha_recepcion}</small>
-                </div>
-                <div>{e.nombre_examen} = <b>{e.valor} {e.unidad}</b> · examen del {e.fecha_examen} · {e.lugar || "lugar no indicado"}{e.archivo ? ` · archivo ${e.archivo}` : ""}</div>
-                <div className="fila">
-                  <button className="boton primario chico" disabled={ocupado === e.id_evidencia} onClick={() => revisar("evidencias", e.id_evidencia, "validada", e.nombre)}>Validar</button>
-                  <button className="boton peligro chico" disabled={ocupado === e.id_evidencia} onClick={() => revisar("evidencias", e.id_evidencia, "rechazada", e.nombre)}>Rechazar</button>
-                </div>
-              </div>
+              <ValidacionExamen key={e.id_evidencia} e={e} ocupado={ocupado === e.id_evidencia}
+                onRevisar={(estado, valores) => revisar("evidencias", e.id_evidencia, estado, e.nombre, valores)} />
             ))}
             {data.alarmas.map((m) => (
               <div key={m.id_mensaje} className="tarjeta compacta pila">

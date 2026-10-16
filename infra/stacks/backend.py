@@ -88,7 +88,9 @@ class BackendStack(Stack):
             variables.update(HLF_KMS_KEY_ID=asistente.clave.key_arn, HLF_HMAC_SECRET_ID=asistente.pepper.secret_arn,
                              HLF_SERVICIO_SECRET_ID=asistente.secreto_servicio.secret_arn,
                              HLF_ASISTENTE_MODELO_ID=entorno.asistente_modelo_id,
-                             HLF_ESTIMACION_PUBLICABLE="1" if entorno.estimacion_publicable else "0")
+                             HLF_ESTIMACION_PUBLICABLE="1" if entorno.estimacion_publicable else "0",
+                             HLF_EXAMENES_KMS_KEY_ID=asistente.clave_examenes.key_arn,
+                             HLF_EXAMENES_ESCANEO="1" if asistente.con_escaneo else "0")
             if entorno.whatsapp_origen:
                 variables["HLF_WHATSAPP_ORIGEN"] = entorno.whatsapp_origen
             if entorno.sms_origen:

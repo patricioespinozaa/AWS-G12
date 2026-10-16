@@ -32,7 +32,7 @@ def construir(app: cdk.App, nombre_entorno: str, dist: Path = RAIZ / "web" / "di
     identidad = IdentidadStack(app, f"{entorno.id}-Identidad", entorno=entorno, env=env)
     ia = IaStack(app, f"{entorno.id}-Ia", entorno=entorno, env=env)
     consulta = ConsultaStack(app, f"{entorno.id}-Consulta", entorno=entorno, datos=datos, env=env)
-    asistente = AsistenteStack(app, f"{entorno.id}-Asistente", entorno=entorno, env=env)
+    asistente = AsistenteStack(app, f"{entorno.id}-Asistente", entorno=entorno, datos=datos, env=env)
     backend = BackendStack(app, f"{entorno.id}-Backend", entorno=entorno, red=red, datos=datos, ia=ia,
                            consulta=consulta, asistente=asistente, env=env)
     frontend = FrontendStack(app, f"{entorno.id}-Frontend", entorno=entorno, red=red, backend=backend,

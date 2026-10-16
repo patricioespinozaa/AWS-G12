@@ -23,7 +23,8 @@ from priorizacion import reglas as R
 
 from . import estado as E
 from . import seguridad
-from .rutas import agenda, asistente, bandeja, canal, cargas, consulta, kpis, meta, nocturno, publico, solicitudes
+from .rutas import (agenda, asistente, bandeja, canal, cargas, consulta, examenes, kpis, meta, nocturno, publico,
+                    solicitudes)
 
 
 def _configurar_logs() -> None:
@@ -57,7 +58,8 @@ async def sin_cache(request: Request, call_next):
 app.include_router(publico.router)
 # Entrada interna de la Lambda de WhatsApp: secreto de servicio en vez de sesión (api/rutas/asistente.py)
 app.include_router(asistente.router_interno)
-for modulo in (meta, bandeja, solicitudes, agenda, canal, kpis, nocturno, cargas, consulta, asistente):
+app.include_router(examenes.router_interno)
+for modulo in (meta, bandeja, solicitudes, agenda, examenes, canal, kpis, nocturno, cargas, consulta, asistente):
     # Todas exigen la sesión de la Administradora (F0007), antes de tocar la base. Después: si otra tarea
     # escribió o se aplicó una carga, se refresca (solo con RDS)
     app.include_router(modulo.router, dependencies=[Depends(seguridad.administradora), Depends(E.sincronizar)])
