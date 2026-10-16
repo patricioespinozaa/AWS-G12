@@ -8,14 +8,16 @@ from __future__ import annotations
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_athena as athena
 from aws_cdk import aws_ec2 as ec2
-from aws_cdk import aws_logs as logs
+from aws_cdk import aws_kms as kms
 from aws_cdk import aws_rds as rds
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_secretsmanager as secretsmanager
 from constructs import Construct
 
 from config.entornos import Entorno
 
+from .comun import retencion
 from .red import RedStack
 
 
@@ -23,11 +25,19 @@ class DatosStack(Stack):
     def __init__(self, scope: Construct, id: str, *, entorno: Entorno, red: RedStack, **kwargs) -> None:
         super().__init__(scope, id, description="HLF priorización: datos (S3, Athena, RDS)", **kwargs)
         retener = entorno.retener_datos
+        # F0013: con datos reales, clave KMS propia (revocable) para el bucket, RDS y los resultados de Athena.
+        # Con datos sintéticos basta el cifrado administrado por AWS
+        self.clave: kms.Key | None = None
+        if entorno.cmk:
+            self.clave = kms.Key(self, "ClaveDatos", alias=f"alias/hlf-{entorno.nombre}-datos", enable_key_rotation=True,
+                                 description="Datos del HLF: bucket, RDS y Athena (F0013)",
+                                 removal_policy=RemovalPolicy.RETAIN)
 
         self.bucket = s3.Bucket(
             self, "Datos",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            encryption=s3.BucketEncryption.S3_MANAGED,
+            encryption=s3.BucketEncryption.KMS if self.clave else s3.BucketEncryption.S3_MANAGED,
+            encryption_key=self.clave,
             bucket_key_enabled=True,
             enforce_ssl=True,
             versioned=True,
@@ -63,7 +73,8 @@ class DatosStack(Stack):
                 result_configuration=athena.CfnWorkGroup.ResultConfigurationProperty(
                     output_location=f"s3://{self.bucket.bucket_name}/athena-resultados/",
                     encryption_configuration=athena.CfnWorkGroup.EncryptionConfigurationProperty(
-                        encryption_option="SSE_S3")),
+                        encryption_option="SSE_KMS", kms_key=self.clave.key_arn) if self.clave else
+                    athena.CfnWorkGroup.EncryptionConfigurationProperty(encryption_option="SSE_S3")),
             ),
         )
 
@@ -82,15 +93,24 @@ class DatosStack(Stack):
                 max_allocated_storage=50,
                 storage_type=rds.StorageType.GP3,
                 storage_encrypted=True,
+                storage_encryption_key=self.clave,
                 publicly_accessible=False,
                 multi_az=False,
-                backup_retention=Duration.days(7 if retener else 1),
+                backup_retention=Duration.days(entorno.dias_respaldo_rds),     # F0013: 7 en demo, 35 con datos reales
+                preferred_backup_window="07:00-08:00",                      # UTC: después de la corrida nocturna
                 deletion_protection=retener,
                 removal_policy=RemovalPolicy.SNAPSHOT if retener else RemovalPolicy.DESTROY,
                 cloudwatch_logs_exports=["postgresql"],
-                cloudwatch_logs_retention=logs.RetentionDays.ONE_MONTH,
+                cloudwatch_logs_retention=retencion(entorno.dias_logs),
                 auto_minor_version_upgrade=True,
             )
+            if entorno.rotar_secreto_rds:
+                # F0013: rotación alojada por Secrets Manager cada 30 días. La Lambda corre en las subredes del backend
+                # (sale por el NAT a Secrets Manager) con su security group, que ya llega a RDS
+                self.rds.secret.add_rotation_schedule(
+                    "Rotacion", automatically_after=Duration.days(30),
+                    hosted_rotation=secretsmanager.HostedRotation.postgre_sql_single_user(
+                        vpc=red.vpc, vpc_subnets=red.subredes_backend, security_groups=[red.sg_backend]))
             CfnOutput(self, "RdsHost", value=self.rds.db_instance_endpoint_address,
                       description="HLF_DB_HOST")
             CfnOutput(self, "RdsSecreto", value=self.rds.secret.secret_arn,

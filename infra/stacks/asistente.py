@@ -26,13 +26,13 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_kms as kms
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_lambda_event_sources as eventos
-from aws_cdk import aws_logs as logs
 from aws_cdk import aws_secretsmanager as secretsmanager
 from aws_cdk import aws_sns as sns
 from constructs import Construct
 
 from config.entornos import Entorno
 
+from .comun import retencion as retencion_logs
 from .datos import DatosStack
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -71,7 +71,7 @@ class AsistenteStack(Stack):
                                          exclude=["*", "!lambda_whatsapp.py"]),
             timeout=Duration.seconds(60),
             memory_size=256,
-            log_retention=logs.RetentionDays.ONE_MONTH if entorno.dias_logs >= 30 else logs.RetentionDays.ONE_WEEK,
+            log_retention=retencion_logs(entorno.dias_logs),
             environment={"HLF_SERVICIO_SECRET_ID": self.secreto_servicio.secret_arn,
                          "HLF_API_PARAMETRO": self.parametro_api,
                          "HLF_WHATSAPP_ORIGEN": entorno.whatsapp_origen},
@@ -91,6 +91,7 @@ class AsistenteStack(Stack):
                                       description="Cifrado de los exámenes externos (canal/evidencias)",
                                       enable_key_rotation=True, removal_policy=retencion)
         self.con_escaneo = entorno.examenes_guardduty
+        self.funcion_escaneo: lambda_.Function | None = None
         if self.con_escaneo:
             rol = iam.Role(self, "RolMalware", description="GuardDuty Malware Protection for S3 (exámenes externos)",
                            assumed_by=iam.ServicePrincipal("malware-protection-plan.guardduty.amazonaws.com"))
@@ -124,10 +125,13 @@ class AsistenteStack(Stack):
                 runtime=lambda_.Runtime.PYTHON_3_12, handler="lambda_escaneo.handler",
                 code=lambda_.Code.from_asset(str(RAIZ / "servicios" / "ocr_examenes"), exclude=["*", "!lambda_escaneo.py"]),
                 timeout=Duration.seconds(30), memory_size=128,
-                log_retention=logs.RetentionDays.ONE_MONTH if entorno.dias_logs >= 30 else logs.RetentionDays.ONE_WEEK,
+                log_retention=retencion_logs(entorno.dias_logs),
                 environment={"HLF_SERVICIO_SECRET_ID": self.secreto_servicio.secret_arn,
                              "HLF_API_PARAMETRO": self.parametro_api})
             self.secreto_servicio.grant_read(escaneo)
+            self.funcion_escaneo = escaneo
+            if datos.clave is not None:          # F0013: el objeto de validación de GuardDuty usa la clave del bucket
+                datos.clave.grant_encrypt_decrypt(rol)
             escaneo.add_to_role_policy(iam.PolicyStatement(
                 actions=["ssm:GetParameter"], resources=[self.format_arn(
                     service="ssm", resource="parameter", resource_name=self.parametro_api.lstrip("/"))]))

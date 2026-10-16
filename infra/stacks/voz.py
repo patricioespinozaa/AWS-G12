@@ -18,11 +18,12 @@ from aws_cdk import aws_connect as connect
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_lex as lex
-from aws_cdk import aws_logs as logs
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 
 from config.entornos import Entorno
+
+from .comun import retencion as retencion_logs
 
 from .asistente import AsistenteStack
 from .datos import DatosStack
@@ -54,7 +55,7 @@ class VozStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12, handler="lambda_voz.handler",
             code=lambda_.Code.from_asset(str(RAIZ / "servicios" / "asistente"), exclude=["*", "!lambda_voz.py"]),
             timeout=Duration.seconds(28), memory_size=256,
-            log_retention=logs.RetentionDays.ONE_MONTH if entorno.dias_logs >= 30 else logs.RetentionDays.ONE_WEEK,
+            log_retention=retencion_logs(entorno.dias_logs),
             environment={"HLF_SERVICIO_SECRET_ID": asistente.secreto_servicio.secret_arn,
                          "HLF_API_PARAMETRO": asistente.parametro_api})
         asistente.secreto_servicio.grant_read(self.funcion)

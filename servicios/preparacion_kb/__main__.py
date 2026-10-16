@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 from datetime import date
 from pathlib import Path
+
+from servicios.comun import logs
 
 
 def main(argv=None) -> int:
@@ -21,7 +22,7 @@ def main(argv=None) -> int:
     p.add_argument("--sin-esperar", action="store_true")
     p.add_argument("--faq", action="store_true", help="Sincroniza la KB del paciente (preguntas frecuentes, F0010)")
     args = p.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logs.configurar()
     if args.local:
         from priorizacion.datos import Repositorio
         from . import documentos as D
