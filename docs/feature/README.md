@@ -13,7 +13,7 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 | [F0005](F0005-persistencia-app-rds.md) | La app usa RDS, con cargas de datos incrementales y versionadas | Hecha (desplegada en `demo`) | F0004 | RDS, S3 |
 | [F0006](F0006-proceso-nocturno-reloj.md) | Consolidación nocturna, recálculo por carga e histórico | Implementado | F0005 | EventBridge Scheduler, ECS, RDS, S3, Athena |
 | [F0007](F0007-autenticacion-roles.md) | Autenticación de la Administradora | Implementado | F0004, F0005 | Cognito |
-| [F0008](F0008-explicaciones-bedrock.md) | Explicaciones con IA generativa conectadas a Bedrock | Plan | F0004 | Bedrock, Guardrails |
+| [F0008](F0008-explicaciones-bedrock.md) | Explicaciones con IA generativa conectadas a Bedrock | Implementado | F0004 | Bedrock, Guardrails |
 | [F0009](F0009-consulta-lenguaje-natural.md) | Consulta en lenguaje natural del equipo clínico | Plan | F0005, F0007, F0008 | Bedrock Knowledge Bases, S3 Vectors, Athena, Lambda |
 | [F0010](F0010-asistente-whatsapp.md) | Asistente del paciente por WhatsApp | Plan | F0005, F0006, F0008 | End User Messaging Social, SNS, Lambda, Bedrock |
 | [F0011](F0011-asistente-voz.md) | Asistente del paciente por teléfono (voz) | Plan | F0010 | Amazon Connect, Lex V2, Polly, Lambda |

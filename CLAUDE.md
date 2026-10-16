@@ -22,6 +22,7 @@ Consecuencias para el código:
 - Todo cambio de prioridad debe quedar **registrado**: valor anterior, valor nuevo, motivo, fecha y versión del modelo o las reglas.
 - Nunca sobrescribir la prioridad clínica asignada por una persona. La propuesta del sistema se guarda en un campo aparte.
 - Preferir reglas y puntajes interpretables por sobre modelos de caja negra. Si se usa un LLM, debe citar el fragmento de texto del que sacó cada hallazgo.
+- **Solo IA del ecosistema AWS** (regla del hackatón): modelos por Amazon Bedrock con credenciales IAM, y servicios de IA de AWS (Lex, Polly, Textract, Connect). Nunca APIs de otros proveedores ni sus claves (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`…). Ver `docs/feature/F0008-explicaciones-bedrock.md`. Cliente: `boto3` (`bedrock-runtime`, Converse); lo verifica `tests/test_solo_aws.py`. Modelos permitidos en la cuenta: política `ws-bedrock-model-allowlist`. Prueba de humo: `python scripts/prueba_bedrock.py [--modelos …]`
 
 ## Datos y privacidad
 
