@@ -1,6 +1,7 @@
+import { Loader2, MessageSquareText, RefreshCw, Send } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { postJSON, Registro, useApi } from "../api";
-import { Aviso, Cargando, Tabla } from "../componentes/comunes";
+import { Aviso, Cargando, Encabezado, Tabla } from "../componentes/comunes";
 import { useApp } from "../contexto";
 
 /** Respuesta de POST /api/consulta (servicios/consulta_ia/servicio.py). */
@@ -75,10 +76,10 @@ function Estado() {
         Modelo: <code>{String(data.modelo)}</code>.
       </small>
       <span>
-        {data.preparando ? <small>⏳ Sincronizando documentos…</small> : (
+        {data.preparando ? <small className="transicion"><Loader2 size={14} className="girando" /> Sincronizando documentos…</small> : (
           <button className="boton chico" onClick={sincronizar} disabled={!data.kb_configurada}
             title="Regenera los documentos con los datos a la fecha de corte y los vuelve a indexar (unos minutos)">
-            Sincronizar
+            <RefreshCw size={13} /> Sincronizar
           </button>
         )}
         {aviso && <small className="cambio-sube"> {aviso}</small>}
@@ -135,10 +136,10 @@ export default function Consulta() {
 
   if (meta && meta.base_de_datos !== "rds")
     return (
-      <div className="tarjeta pila">
-        <h2>Consulta en lenguaje natural</h2>
-        <Aviso tipo="info">La consulta usa Amazon Bedrock, Athena y la base de datos (RDS): está disponible en la app desplegada en AWS.</Aviso>
-      </div>
+      <>
+        <Encabezado icono={MessageSquareText} titulo="Consulta" />
+        <Aviso tipo="info">Disponible en la app desplegada en AWS (usa Bedrock, Athena y RDS).</Aviso>
+      </>
     );
 
   const preguntar = async (pregunta: string) => {
@@ -163,22 +164,16 @@ export default function Consulta() {
 
   return (
     <>
-      <div className="encabezado">
-        <h1>🔎 Consulta</h1>
-        <p>
-          Pregunta en lenguaje natural. Los conteos se responden con SQL exacto en Athena (se muestra el SQL); los resúmenes,
-          con la base de conocimiento de perfiles y resúmenes, citando los fragmentos. La herramienta solo lee: no modifica
-          datos ni prioridades, no diagnostica y no entrega datos que identifiquen a una persona.
-        </p>
-      </div>
+      <Encabezado icono={MessageSquareText} titulo="Consulta"
+        descripcion="Pregunta en lenguaje natural. Los conteos salen de SQL exacto y los resúmenes citan su fuente. Solo lee: no modifica nada." />
       <div className="tarjeta pila">
         <Estado />
         <form className="fila" onSubmit={enviar}>
           <input className="consulta-entrada" value={texto} onChange={(e) => setTexto(e.target.value)} maxLength={500}
             placeholder="Ej.: ¿Cuántos pacientes de Cardiología en espera tienen un evento grave?" />
-          <button className="boton primario" disabled={enviando || texto.trim().length < 3}>{enviando ? "Consultando…" : "Preguntar"}</button>
+          <button className="boton primario" disabled={enviando || texto.trim().length < 3}><Send size={15} /> {enviando ? "Consultando…" : "Preguntar"}</button>
         </form>
-        <div className="fila">
+        <div className="sugerencias">
           {EJEMPLOS.map((q) => <button key={q} className="boton chico" onClick={() => preguntar(q)} disabled={enviando}>{q}</button>)}
         </div>
       </div>
@@ -209,7 +204,7 @@ export default function Consulta() {
             { clave: "latencia_ms", titulo: "s", num: true, render: (f) => ((f.latencia_ms as number) / 1000).toFixed(1) },
           ]} />
         )}
-        <small className="suave">Cada pregunta queda registrada con su ruta, el SQL o las fuentes, y la persona que preguntó.</small>
+
       </div>
     </>
   );

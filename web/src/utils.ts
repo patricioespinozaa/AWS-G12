@@ -1,15 +1,15 @@
-export const COLOR_NIVEL: Record<string, string> = { alta: "#c0392b", media: "#c27c0e", baja: "#2471a3" };
+export const COLOR_NIVEL: Record<string, string> = { alta: "#c62828", media: "#b26a00", baja: "#1565c0" };
 export const VALOR_NIVEL: Record<string, number> = { baja: 1, media: 2, alta: 3 };
 export const NOMBRE_NIVEL: Record<number, string> = { 1: "baja", 2: "media", 3: "alta" };
 export const COLOR_SEVERIDAD: Record<string, string> = { leve: "#1e8449", moderada: "#ca6f1e", grave: "#c0392b" };
 export const ICONO_CAMBIO: Record<string, string> = { sube: "↑ sube", baja: "↓ baja", igual: "=" };
 export const ETIQUETA_DISP: Record<string, string> = {
-  lista: "✅ Lista",
-  faltan_examenes: "🧪 Faltan exámenes",
-  no_confirma: "📵 Confirmar asistencia",
-  sin_contacto: "☎️ Sin contacto",
+  lista: "Lista para box",
+  faltan_examenes: "Faltan exámenes",
+  no_confirma: "Confirmar asistencia",
+  sin_contacto: "Sin contacto",
 };
-export const COLORES_SERIE = ["#0f6e6e", "#c0392b", "#2471a3", "#c27c0e", "#7d3c98", "#1e8449", "#5d6d7e"];
+export const COLORES_SERIE = ["#1565c0", "#c62828", "#00897b", "#b26a00", "#6a4c93", "#2e7d32", "#546e7a"];
 
 export function num(x: number | null | undefined, decimales = 1): string {
   if (x === null || x === undefined || Number.isNaN(x)) return "—";

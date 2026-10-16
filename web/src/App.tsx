@@ -1,4 +1,9 @@
+import {
+  BarChart3, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Cross, Database,
+  Inbox, ListOrdered, LogOut, MessageSquareText, MoonStar, Sparkles, SlidersHorizontal, Upload, UserRound,
+} from "lucide-react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Registro, useApi } from "./api";
 import { useSesion } from "./auth/ProveedorSesion";
 import { Cargando } from "./componentes/comunes";
 import { useApp } from "./contexto";
@@ -13,113 +18,140 @@ import Nocturno from "./paginas/Nocturno";
 import Reglas from "./paginas/Reglas";
 import { sumarDias } from "./utils";
 
-const MODO_FECHA = {
-  datos: "fecha de la última carga aplicada",
-  manual: "fecha fijada para un ensayo",
-  local: "última fecha de los CSV locales",
-};
-
 function AvisoRecalculo() {
   const { consolidacion } = useApp();
   if (!consolidacion) return null;
   if (consolidacion.en_curso)
     return (
       <div className="aviso info recalculo" role="status">
-        ⏳ Recalculando prioridades con los datos nuevos (desde {consolidacion.inicio?.slice(11, 16) ?? "ahora"}). Puedes
-        seguir revisando; al terminar la vista se actualiza sola.
+        <div>
+          <b>Recalculando prioridades</b> desde las {consolidacion.inicio?.slice(11, 16) ?? "ahora"}. Puedes seguir
+          trabajando: la vista se actualiza al terminar.
+        </div>
       </div>
     );
   if (consolidacion.error)
-    return <div className="aviso error recalculo" role="alert">El último recálculo falló: {consolidacion.error}</div>;
+    return <div className="aviso error recalculo" role="alert"><div>El último recálculo falló: {consolidacion.error}</div></div>;
   return null;
 }
 
+/** Fecha de corte: el "hoy" de la vista. Se usa solo lo que el hospital sabía hasta esa noche. */
 function BarraCorte() {
   const { meta, corte, setCorte } = useApp();
   if (!meta) return null;
   const esHoy = corte === meta.fecha_referencia;
   return (
     <>
-    <div className="barra">
-      <div className="corte">
-        <label htmlFor="corte">Fecha de corte</label>
-        <button className="boton chico" onClick={() => setCorte(sumarDias(corte, -30))} title="30 días antes">« 30 d</button>
-        <button className="boton chico" onClick={() => setCorte(sumarDias(corte, -1))} title="Noche anterior">‹ 1 d</button>
-        <input id="corte" type="date" value={corte} min={meta.fecha_min} max={meta.fecha_referencia}
-          onChange={(e) => setCorte(e.target.value)} />
-        <button className="boton chico" onClick={() => setCorte(sumarDias(corte, 1))} title="Noche siguiente">1 d ›</button>
-        <button className="boton chico" onClick={() => setCorte(sumarDias(corte, 30))} title="30 días después">30 d »</button>
-        <button className={`boton chico${esHoy ? " activo" : ""}`} onClick={() => setCorte(meta.fecha_referencia)}>
-          Hoy ({meta.fecha_referencia})
-        </button>
+      <div className="barra">
+        <div className="corte">
+          <label htmlFor="corte"><CalendarClock size={16} /> Fecha de corte</label>
+          <button className="boton icono" onClick={() => setCorte(sumarDias(corte, -30))} title="30 días antes"><ChevronsLeft size={16} /></button>
+          <button className="boton icono" onClick={() => setCorte(sumarDias(corte, -1))} title="Noche anterior"><ChevronLeft size={16} /></button>
+          <input id="corte" type="date" value={corte} min={meta.fecha_min} max={meta.fecha_referencia}
+            onChange={(e) => e.target.value && setCorte(e.target.value)} />
+          <button className="boton icono" onClick={() => setCorte(sumarDias(corte, 1))} title="Noche siguiente" disabled={esHoy}><ChevronRight size={16} /></button>
+          <button className="boton icono" onClick={() => setCorte(sumarDias(corte, 30))} title="30 días después" disabled={esHoy}><ChevronsRight size={16} /></button>
+          <button className={`boton chico${esHoy ? " activo" : ""}`} onClick={() => setCorte(meta.fecha_referencia)}>Hoy</button>
+        </div>
+        <span className="nota-corte">
+          {esHoy ? <>Datos al <b>{meta.datos_al}</b></> : <>Viendo el pasado: <b>{corte}</b> · datos al {meta.datos_al}</>}
+          {meta.modo_fecha === "manual" ? " (fecha fijada para un ensayo)" : ""}
+        </span>
       </div>
-      <span className="nota-corte" title={MODO_FECHA[meta.modo_fecha]}>
-        Datos al <b>{meta.datos_al}</b>{meta.modo_fecha === "manual" ? " (fecha fijada)" : ""}. Se usa solo lo que el
-        hospital sabía hasta esa noche.
-      </span>
-      <span className="ia">
-        {meta.llm.activo ? `IA generativa: Amazon Bedrock · ${meta.llm.modelo}` : "IA generativa desactivada · explicaciones con plantilla"}
-      </span>
-    </div>
-    <AvisoRecalculo />
+      <AvisoRecalculo />
     </>
+  );
+}
+
+function Cabecera() {
+  const { meta } = useApp();
+  const { salir } = useSesion();
+  if (!meta) return null;
+  const nombre = meta.sesion.nombre.replace(/\s*\(.*\)\s*$/, "");
+  const iniciales = nombre.split(/\s+/).filter((p) => /^\p{L}/u.test(p)).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+  return (
+    <div className="cabecera">
+      <div className="institucion">
+        <b>Hospital Clínico Dra. Eloísa Díaz · La Florida</b>
+        <small>Servicio de Salud Metropolitano Sur Oriente · Lista de espera de especialidades</small>
+      </div>
+      <div className="cabecera-derecha">
+        <span className="distintivo sinteticos" title="El dataset del hackatón es 100 % sintético: sin RUT ni nombres reales">
+          <Database size={13} /> Datos sintéticos
+        </span>
+        {meta.llm.activo && (
+          <span className="distintivo ia" title={`Amazon Bedrock · ${meta.llm.modelo}`}><Sparkles size={13} /> IA Amazon Bedrock</span>
+        )}
+        <div className="usuario">
+          <span className="usuario-avatar">{iniciales || "A"}</span>
+          <div>
+            <b>{nombre}</b>
+            <small>{meta.sesion.autenticacion === "cognito" ? "Administradora" : "Modo local"}</small>
+          </div>
+          {meta.sesion.autenticacion === "cognito" && (
+            <button className="boton icono" onClick={salir} title="Cerrar sesión"><LogOut size={16} /></button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Lateral() {
+  const { version } = useApp();
+  const pendientes = useApi<{ evidencias: Registro[]; alarmas: Registro[] }>("/api/canal-pendientes", version);
+  const nPendientes = (pendientes.data?.evidencias.length ?? 0) + (pendientes.data?.alarmas.length ?? 0);
+  const enlace = (a: string, Icono: typeof Inbox, texto: string, contador?: number) => (
+    <NavLink to={a}><Icono size={17} />{texto}{contador ? <span className="contador">{contador}</span> : null}</NavLink>
+  );
+  return (
+    <aside className="lateral">
+      <div className="marca">
+        <div className="marca-logo"><Cross size={18} strokeWidth={2.6} /></div>
+        <div>
+          <b>Priorización dinámica</b>
+          <small>Lista de espera · HLF</small>
+        </div>
+      </div>
+      <nav className="nav">
+        <div className="nav-grupo">
+          <span>Trabajo diario</span>
+          {enlace("/bandeja", ListOrdered, "Lista priorizada")}
+          {enlace("/ficha", UserRound, "Ficha del paciente")}
+          {enlace("/canal", Inbox, "Canal del paciente", nPendientes)}
+          {enlace("/agenda", CalendarDays, "Agenda y box")}
+        </div>
+        <div className="nav-grupo">
+          <span>Análisis</span>
+          {enlace("/kpis", BarChart3, "Indicadores")}
+          {enlace("/consulta", MessageSquareText, "Consulta")}
+        </div>
+        <div className="nav-grupo">
+          <span>Datos y reglas</span>
+          {enlace("/cargas", Upload, "Cargas de datos")}
+          {enlace("/nocturno", MoonStar, "Proceso nocturno")}
+          {enlace("/reglas", SlidersHorizontal, "Reglas del puntaje")}
+        </div>
+      </nav>
+      <div className="lateral-pie">
+        La herramienta <b>propone y explica</b>; la Administradora <b>decide</b>. La posición en la lista no es una fecha
+        garantizada de atención.
+      </div>
+    </aside>
   );
 }
 
 export default function App() {
   const { meta, corte } = useApp();
-  const { salir } = useSesion();
   return (
     <div className="app">
-      <aside className="lateral">
-        <div className="marca">
-          <div className="marca-logo">+</div>
-          <div>
-            <b>Priorización dinámica</b>
-            <small>HLF · MVP con datos sintéticos</small>
-          </div>
-        </div>
-        <nav className="nav-grupo">
-          <span>Revisión</span>
-          <NavLink to="/bandeja">📋 Bandeja priorizada</NavLink>
-          <NavLink to="/ficha">🩺 Ficha del paciente</NavLink>
-          <NavLink to="/agenda">🗓️ Agenda y box</NavLink>
-          <NavLink to="/consulta">🔎 Consulta</NavLink>
-        </nav>
-        <nav className="nav-grupo">
-          <span>Paciente (maqueta)</span>
-          <NavLink to="/canal">💬 Canal del paciente</NavLink>
-        </nav>
-        <nav className="nav-grupo">
-          <span>Gestión</span>
-          <NavLink to="/kpis">📊 KPIs</NavLink>
-          <NavLink to="/nocturno">🌙 Consolidación nocturna</NavLink>
-          <NavLink to="/reglas">⚙️ Reglas</NavLink>
-          <NavLink to="/cargas">📥 Cargas de datos</NavLink>
-        </nav>
-        <div className="principio">
-          La herramienta <b>propone y explica</b>; la Administradora <b>decide</b>.
-          <br />
-          La posición en la lista no equivale a una fecha garantizada de atención.
-          {meta && <><br /><br />Reglas <b>{meta.version_reglas}</b> · {meta.base_de_datos === "rds" ? "base de datos RDS" : "modo local"}</>}
-        </div>
-        {meta && (
-          <div className="sesion">
-            <span>Administradora</span>
-            <b>{meta.sesion.nombre}</b>
-            {meta.sesion.autenticacion === "cognito" ? (
-              <button className="boton chico" onClick={salir}>Cerrar sesión</button>
-            ) : (
-              <small className="sin-auth">Sin autenticación: solo para desarrollo local</small>
-            )}
-          </div>
-        )}
-      </aside>
+      <Lateral />
       <main className="principal">
+        <Cabecera />
         <BarraCorte />
         <div className="contenido">
           {!meta || !corte ? (
-            <Cargando texto="Conectando con la API…" />
+            <Cargando texto="Conectando con el servidor…" />
           ) : (
             <Routes>
               <Route path="/" element={<Navigate to="/bandeja" replace />} />

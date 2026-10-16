@@ -88,7 +88,7 @@ export default function GraficoEvolucion({ datos, corte, inicial, especialidad }
         <div>Lista congelada: {inicial} · Propuesta: <b style={{ color: COLOR_NIVEL[f.nivel_propuesto] }}>{f.nivel_propuesto}</b> · Vigente: {f.prioridad_vigente}</div>
         <div>Puntaje de nivel {num(f.puntaje_nivel)} · orden {num(f.puntaje)}</div>
         <div>Posición {f.pos_din} de {f.total} (lista congelada: {f.pos_est})</div>
-        {f.alerta ? <div style={{ color: "#c0392b" }}>⚠️ Alerta activa</div> : null}
+        {f.alerta ? <div style={{ color: "#c62828", fontWeight: 600 }}>Alerta activa</div> : null}
         <div className="suave">{f.motivo}</div>
         {evs.map((e) => <div key={e}>• {e}</div>)}
       </div>
