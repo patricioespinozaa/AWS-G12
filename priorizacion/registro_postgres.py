@@ -19,15 +19,17 @@ import psycopg
 
 from . import config
 from .motor import Decision, Resultado
+from .registro import ROL_ADMINISTRACION, decisiones_a_objetos
 
 SERIE = """
     SELECT s.fecha::text AS fecha, s.id_solicitud, le.id_paciente, le.especialidad, s.puntaje::float8 AS puntaje,
            s.puntaje_nivel::float8 AS puntaje_nivel, s.nivel_propuesto, s.prioridad_vigente, le.prioridad_inicial,
            s.cambio, s.alerta::int AS alerta, s.motivo_principal, s.posicion_dinamica, s.posicion_estatica,
-           s.total_cola
+           s.total_cola, s.ajuste_puntaje::float8 AS ajuste_puntaje
     FROM priorizacion.serie_nocturna s JOIN raw.lista_espera le USING (id_solicitud)"""
 COLUMNAS_SERIE = ["id_solicitud", "fecha", "puntaje", "puntaje_nivel", "nivel_propuesto", "prioridad_vigente",
-                  "cambio", "alerta", "motivo_principal", "posicion_dinamica", "posicion_estatica", "total_cola"]
+                  "cambio", "alerta", "motivo_principal", "posicion_dinamica", "posicion_estatica", "total_cola",
+                  "ajuste_puntaje"]
 PROPUESTAS = """
     SELECT p.id_propuesta, p.id_solicitud, le.id_paciente, p.fecha_corte::text AS fecha_corte,
            to_char(p.fecha_calculo, 'YYYY-MM-DD"T"HH24:MI:SS') AS fecha_calculo, p.puntaje::float8 AS puntaje,
@@ -39,7 +41,8 @@ PROPUESTAS = """
 DECISIONES = """
     SELECT id_decision, id_propuesta, id_solicitud, fecha_corte::text AS fecha_corte, prioridad_anterior,
            prioridad_propuesta, decision, prioridad_final, motivo, id_usuario AS usuario,
-           to_char(fecha_registro, 'YYYY-MM-DD"T"HH24:MI:SS') AS fecha_registro
+           to_char(fecha_registro, 'YYYY-MM-DD"T"HH24:MI:SS') AS fecha_registro,
+           puntaje_calculado::float8 AS puntaje_calculado, ajuste_puntaje::float8 AS ajuste_puntaje
     FROM priorizacion.decision_clinica"""
 EVIDENCIAS = """
     SELECT id_evidencia::text AS id_evidencia, id_paciente, fecha_examen::text AS fecha_examen, tipo_medicion,
@@ -143,7 +146,8 @@ class RegistroPostgres:
             for f in filas.itertuples(index=False):
                 copia.write_row((f.id_solicitud, f.fecha, f.puntaje, f.puntaje_nivel, f.nivel_propuesto,
                                  f.prioridad_vigente, f.cambio, bool(f.alerta), f.motivo_principal,
-                                 int(f.posicion_dinamica), int(f.posicion_estatica), int(f.total_cola)))
+                                 int(f.posicion_dinamica), int(f.posicion_estatica), int(f.total_cola),
+                                 f.ajuste_puntaje or 0))
 
     def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]):
         """Reemplaza solo las noches indicadas (todas las especialidades). Lo usa la consolidación (F0006)."""
@@ -215,14 +219,15 @@ class RegistroPostgres:
 
     # -- decisiones ---------------------------------------------------------------------------------
     def registrar_decision(self, id_propuesta: int, r: Resultado, decision: str, prioridad_final: str,
-                           motivo: str, usuario: str) -> int:
+                           motivo: str, usuario: str, ajuste_puntaje: float | None = None) -> int:
         with self.conexion() as c:
             return c.execute(
                 "INSERT INTO priorizacion.decision_clinica (id_propuesta, id_solicitud, fecha_corte, "
-                "prioridad_anterior, prioridad_propuesta, decision, prioridad_final, motivo, id_usuario) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_decision",
+                "prioridad_anterior, prioridad_propuesta, decision, prioridad_final, motivo, id_usuario, "
+                "puntaje_calculado, ajuste_puntaje) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING id_decision",
                 (id_propuesta, r.id_solicitud, r.fecha_corte, r.prioridad_vigente, r.nivel_propuesto, decision,
-                 prioridad_final, motivo, usuario)).fetchone()[0]
+                 prioridad_final, motivo, usuario, r.puntaje, ajuste_puntaje)).fetchone()[0]
 
     def decisiones(self, id_solicitud: str | None = None) -> pd.DataFrame:
         if id_solicitud:
@@ -231,10 +236,7 @@ class RegistroPostgres:
         return self.consulta(DECISIONES + " ORDER BY fecha_corte, id_decision")
 
     def decisiones_por_solicitud(self) -> dict[str, list[Decision]]:
-        out: dict[str, list[Decision]] = {}
-        for r in self.decisiones().itertuples(index=False):
-            out.setdefault(r.id_solicitud, []).append(Decision(date.fromisoformat(r.fecha_corte), r.prioridad_final))
-        return out
+        return decisiones_a_objetos(self.decisiones())
 
     # -- canal del paciente -------------------------------------------------------------------------
     def agregar_evidencia(self, id_paciente: str, fecha_examen: date, tipo: str, valor: float, lugar: str,
@@ -294,6 +296,31 @@ class RegistroPostgres:
         """La fecha de los datos: fin del periodo de la última versión aplicada (o la fija del modo manual)."""
         with self._lock:
             return self._con().execute("SELECT priorizacion.fecha_corte()").fetchone()[0]
+
+    # -- personas (F0007) ---------------------------------------------------------------------------
+    def sincronizar_usuario(self, id_usuario: str, nombre: str) -> bool:
+        """Crea o actualiza a la persona autenticada (rol `administracion`) en priorizacion.usuario, que es la FK
+        de todas las columnas *_por. Devuelve si puede entrar: activa y con ese rol (una cuenta desactivada en la
+        base no entra aunque su token sea válido). No sube la versión de la app."""
+        with self._lock:
+            c = self._con()
+            with c.transaction():
+                c.execute("INSERT INTO priorizacion.usuario (id_usuario, nombre, rol) VALUES (%s, %s, %s) "
+                          "ON CONFLICT (id_usuario) DO UPDATE SET nombre = EXCLUDED.nombre "
+                          "WHERE priorizacion.usuario.nombre IS DISTINCT FROM EXCLUDED.nombre",
+                          (id_usuario, nombre, ROL_ADMINISTRACION))
+                activo, rol = c.execute("SELECT activo, rol FROM priorizacion.usuario WHERE id_usuario = %s",
+                                        (id_usuario,)).fetchone()
+        return bool(activo) and rol == ROL_ADMINISTRACION
+
+    def usuarios(self) -> pd.DataFrame:
+        return self.consulta("SELECT id_usuario, nombre, rol, activo::int AS activo FROM priorizacion.usuario "
+                             "WHERE rol = %s ORDER BY id_usuario", (ROL_ADMINISTRACION,))
+
+    def activar_usuario(self, id_usuario: str, activo: bool) -> bool:
+        with self.conexion() as c:
+            return c.execute("UPDATE priorizacion.usuario SET activo = %s WHERE id_usuario = %s",
+                             (activo, id_usuario)).rowcount > 0
 
     def modo_fecha(self) -> str:
         """`datos` (la fecha de la última versión aplicada) o `manual` (fijada para un ensayo)."""

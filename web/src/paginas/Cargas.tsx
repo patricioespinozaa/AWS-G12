@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { postJSON, Registro, useApi } from "../api";
+import { descargar, postJSON, Registro, useApi } from "../api";
 import { Aviso, Cargando, Tabla } from "../componentes/comunes";
 import { useApp } from "../contexto";
 
@@ -182,7 +182,7 @@ function Historial({ version }: { version: number }) {
             { clave: "nuevas", titulo: "Nuevas", num: true, render: (f) => total(f, "nuevas") },
             { clave: "modificadas", titulo: "Modificadas", num: true, render: (f) => total(f, "modificadas") },
             { clave: "archivos", titulo: "Originales", render: (f) => (f.uri_archivos ? Object.keys((f.archivos as object) ?? {}).map((n) => (
-              <a key={n} href={`/api/cargas/${f.id_carga}/archivos/${n}`} onClick={(e) => e.stopPropagation()}>{n.replace(".csv", "")} </a>)) : "—") },
+              <a key={n} href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); descargar(`/api/cargas/${f.id_carga}/archivos/${n}`, `carga${f.id_carga}_${n}`).catch((err) => alert((err as Error).message)); }}>{n.replace(".csv", "")} </a>)) : "—") },
           ]} />
       )}
       {elegida && detalle.data && (

@@ -94,7 +94,7 @@ Lo llaman la vista Cargas (en segundo plano) y la consolidación nocturna. Corre
 ### Estimación de espera (`priorizacion/estimacion.py`)
 
 `throughput_8_semanas`:
-1. Ordena la cola de cada especialidad por prioridad vigente, fecha de ingreso e ID; esa es la posición vigente.
+1. Ordena la cola de cada especialidad por prioridad vigente, puntaje vigente (desde F0007: el del motor más el ajuste de la Administradora), fecha de ingreso e ID; esa es la posición vigente.
 2. Cuenta las atenciones (citas con asistencia) por semana en las 8 semanas previas al corte.
 3. El rango de días es `posición ÷ (atenciones por día)`, usando las semanas p75 (cota optimista) y p25 (cota pesimista).
 4. Sin atenciones en la ventana, **no hay estimación**: no se inventa.

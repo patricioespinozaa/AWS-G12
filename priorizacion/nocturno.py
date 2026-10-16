@@ -49,7 +49,7 @@ def _serie_solicitud(repo: Repositorio, sol: Solicitud, decisiones: list[Decisio
         r = evaluar(sol, hist, noche, decisiones)
         filas.append((noche.isoformat(), sol.id_solicitud, sol.id_paciente, sol.especialidad, r.puntaje,
                       r.puntaje_nivel, r.nivel_propuesto, r.prioridad_vigente, r.prioridad_inicial, r.cambio, int(r.alerta),
-                      r.motivo_principal, sol.fecha_ingreso.isoformat()))
+                      r.motivo_principal, sol.fecha_ingreso.isoformat(), r.ajuste_puntaje))
         if previo is None:
             if r.cambio != "igual" or r.alerta:
                 cambios.append(r)
@@ -62,20 +62,25 @@ def _serie_solicitud(repo: Repositorio, sol: Solicitud, decisiones: list[Decisio
 
 
 COLUMNAS = ["fecha", "id_solicitud", "id_paciente", "especialidad", "puntaje", "puntaje_nivel", "nivel_propuesto",
-            "prioridad_vigente", "prioridad_inicial", "cambio", "alerta", "motivo_principal", "fecha_ingreso"]
+            "prioridad_vigente", "prioridad_inicial", "cambio", "alerta", "motivo_principal", "fecha_ingreso",
+            "ajuste_puntaje"]
 
 
 def calcular_posiciones(serie: pd.DataFrame) -> pd.DataFrame:
     """Posición en la cola de su especialidad, cada noche.
 
     - estática (lista congelada): prioridad inicial y luego orden de llegada.
-    - dinámica (si se aceptan las propuestas): alerta, nivel propuesto, puntaje y orden de llegada.
+    - dinámica (si se aceptan las propuestas): alerta, nivel propuesto, puntaje vigente (el del motor más el ajuste
+      de la Administradora, F0007) y orden de llegada.
     """
     s = serie.copy()
+    if "ajuste_puntaje" not in s:
+        s["ajuste_puntaje"] = 0.0
+    s["ajuste_puntaje"] = s["ajuste_puntaje"].fillna(0.0)
     s["_ini"] = -s["prioridad_inicial"].map(R.ORDEN_NIVEL)
     s["_prop"] = -s["nivel_propuesto"].map(R.ORDEN_NIVEL)
     s["_alerta"] = -s["alerta"]
-    s["_puntaje"] = -s["puntaje"]
+    s["_puntaje"] = -(s["puntaje"] + s["ajuste_puntaje"])
     grupo = ["fecha", "especialidad"]
     s = s.sort_values(grupo + ["_ini", "fecha_ingreso", "id_solicitud"])
     s["posicion_estatica"] = s.groupby(grupo).cumcount() + 1

@@ -4,16 +4,17 @@ import binascii
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from priorizacion import config, nocturno
+from priorizacion import nocturno
 from priorizacion import reglas as R
 from priorizacion.archivos import ErrorArchivo, guardar_evidencia
 from priorizacion.disponibilidad import evaluar_disponibilidad
 from priorizacion.motor import evaluar
 
 from .. import estado as E
+from ..seguridad import Persona, administradora
 from ..serializacion import a_json
 
 router = APIRouter()
@@ -122,20 +123,20 @@ def _antes_despues(id_paciente: str, corte: date, aplicar):
 
 
 @router.post("/api/canal/evidencias/{id_evidencia}/revision")
-def revisar_evidencia(id_evidencia: str, rev: RevisionIn):
+def revisar_evidencia(id_evidencia: str, rev: RevisionIn, quien: Persona = Depends(administradora)):
     ev = E.registro.evidencias()
     fila = ev[ev["id_evidencia"] == id_evidencia]
     if fila.empty:
         raise HTTPException(404, f"No existe la evidencia {id_evidencia}")
     return _antes_despues(fila.iloc[0]["id_paciente"], E.fecha(rev.corte),
-                          lambda: E.registro.revisar_evidencia(id_evidencia, rev.estado, config.USUARIA, rev.nota))
+                          lambda: E.registro.revisar_evidencia(id_evidencia, rev.estado, quien.id_usuario, rev.nota))
 
 
 @router.post("/api/canal/mensajes/{id_mensaje}/revision")
-def revisar_mensaje(id_mensaje: str, rev: RevisionIn):
+def revisar_mensaje(id_mensaje: str, rev: RevisionIn, quien: Persona = Depends(administradora)):
     msj = E.registro.mensajes()
     fila = msj[msj["id_mensaje"] == id_mensaje]
     if fila.empty:
         raise HTTPException(404, f"No existe el mensaje {id_mensaje}")
     return _antes_despues(fila.iloc[0]["id_paciente"], E.fecha(rev.corte),
-                          lambda: E.registro.revisar_mensaje(id_mensaje, rev.estado, config.USUARIA))
+                          lambda: E.registro.revisar_mensaje(id_mensaje, rev.estado, quien.id_usuario))

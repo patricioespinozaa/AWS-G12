@@ -39,7 +39,7 @@ EXPOSE 8000
 
 # El primer arranque recalcula la serie nocturna completa: el healthcheck espera hasta 5 minutos
 HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
-    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/api/meta', timeout=4)"
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/api/salud', timeout=4)"
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Un solo worker: el MVP mantiene el repositorio en memoria y escribe en SQLite (ver docs/feature/F0005)

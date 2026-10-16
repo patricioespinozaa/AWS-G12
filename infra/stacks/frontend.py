@@ -5,12 +5,17 @@
              el frontend usa rutas relativas y no necesita CORS.
 Las rutas de la SPA (/bandeja, /ficha/…) se resuelven con una CloudFront Function en el comportamiento por
 defecto. No se usan páginas de error de la distribución porque también reescribirían los 404 de la API.
+
+Login (F0007): aquí se crea el app client de Cognito, porque su URL de retorno es la de esta distribución, y su
+configuración se publica en SSM para la API. `/api/*` reenvía la cabecera Authorization (ver POLITICA_API).
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, Annotations
+from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_cloudfront as cf
 from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_ec2 as ec2
@@ -22,6 +27,7 @@ from constructs import Construct
 from config.entornos import Entorno
 
 from .backend import BackendStack
+from .identidad import IdentidadStack
 from .red import RedStack
 
 # Sin extensión en el último segmento = ruta de la SPA → index.html. Con extensión = archivo real de S3.
@@ -36,11 +42,13 @@ function handler(event) {
 }
 """
 PREFIX_LIST_CLOUDFRONT = "com.amazonaws.global.cloudfront.origin-facing"
+# Orígenes locales permitidos como retorno del login, para desarrollo contra el User Pool de AWS
+RETORNOS_LOCALES = ["http://localhost:5173/", "http://localhost:8000/"]
 
 
 class FrontendStack(Stack):
     def __init__(self, scope: Construct, id: str, *, entorno: Entorno, red: RedStack, backend: BackendStack,
-                 dist: Path, **kwargs) -> None:
+                 identidad: IdentidadStack, dist: Path, **kwargs) -> None:
         super().__init__(scope, id, description="HLF priorización: frontend (S3 + CloudFront)", **kwargs)
 
         bucket = s3.Bucket(
@@ -77,6 +85,17 @@ class FrontendStack(Stack):
             read_timeout=Duration.seconds(60),
             keepalive_timeout=Duration.seconds(60),
         )
+        # /api/* no se guarda en caché (TTL 0), pero la política debe nombrar Authorization: CloudFront no la
+        # reenvía en los GET con CachingDisabled y la API recibiría las peticiones sin la sesión
+        politica_api = cf.CachePolicy(
+            self, "PoliticaApi",
+            comment="API: sin caché, reenvía Authorization",
+            default_ttl=Duration.seconds(0), min_ttl=Duration.seconds(0), max_ttl=Duration.seconds(1),
+            header_behavior=cf.CacheHeaderBehavior.allow_list("Authorization"),
+            query_string_behavior=cf.CacheQueryStringBehavior.all(),
+            cookie_behavior=cf.CacheCookieBehavior.none(),
+            enable_accept_encoding_gzip=True, enable_accept_encoding_brotli=True,
+        )
         rutas_spa = cf.Function(self, "RutasSpa", code=cf.FunctionCode.from_inline(FUNCION_SPA),
                                 runtime=cf.FunctionRuntime.JS_2_0,
                                 comment="Rutas de la SPA a index.html")
@@ -101,7 +120,7 @@ class FrontendStack(Stack):
                     origin=api,
                     viewer_protocol_policy=cf.ViewerProtocolPolicy.HTTPS_ONLY,
                     allowed_methods=cf.AllowedMethods.ALLOW_ALL,
-                    cache_policy=cf.CachePolicy.CACHING_DISABLED,
+                    cache_policy=politica_api,
                     origin_request_policy=cf.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
                     response_headers_policy=cf.ResponseHeadersPolicy.SECURITY_HEADERS,
                     compress=True,
@@ -131,6 +150,35 @@ class FrontendStack(Stack):
         else:
             Annotations.of(self).add_warning(
                 f"No existe {dist / 'index.html'}: la web no se publica. Corre `npm run build` en web/ y despliega de nuevo.")
+
+        # Login (F0007): app client público (sin secreto) con authorization code + PKCE, retorno a esta distribución
+        url_app = f"https://{self.distribucion.distribution_domain_name}/"
+        cliente = cognito.UserPoolClient(
+            self, "ClienteWeb",
+            user_pool=identidad.user_pool,
+            user_pool_client_name=f"hlf-web-{entorno.nombre}",
+            generate_secret=False,
+            auth_flows=cognito.AuthFlow(user_srp=True),
+            o_auth=cognito.OAuthSettings(
+                flows=cognito.OAuthFlows(authorization_code_grant=True),
+                scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
+                callback_urls=[url_app, *RETORNOS_LOCALES],
+                logout_urls=[url_app, *RETORNOS_LOCALES]),
+            supported_identity_providers=[cognito.UserPoolClientIdentityProvider.COGNITO],
+            prevent_user_existence_errors=True,
+            id_token_validity=Duration.hours(1),
+            access_token_validity=Duration.hours(1),
+            refresh_token_validity=Duration.hours(12),       # una jornada; después, login de nuevo
+            enable_token_revocation=True,
+        )
+        ssm.StringParameter(
+            self, "ConfigLogin",
+            parameter_name=entorno.parametro_cognito,
+            description="Login de la Administradora (F0007): lo lee la API para verificar tokens",
+            string_value=Stack.of(self).to_json_string({
+                "region": self.region, "user_pool_id": identidad.user_pool.user_pool_id,
+                "client_id": cliente.user_pool_client_id, "dominio": identidad.url_dominio}),
+        )
 
         CfnOutput(self, "Url", value=f"https://{self.distribucion.distribution_domain_name}",
                   description="URL de la app")
