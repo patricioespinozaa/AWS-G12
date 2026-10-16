@@ -1,6 +1,6 @@
 #!/bin/sh
 # Arranque del contenedor del backend.
-#  - La API con RDS configurada (F0005) lee raw de la base: no descarga CSV.
+#  - La API y la consolidación nocturna (F0006) con RDS configurada leen raw de la base: no descargan CSV.
 #  - En otro caso (API sin RDS, o un comando puntual como `python -m db restaurar` en una tarea ECS):
 #    si hay bucket (HLF_S3_BUCKET) y faltan los CSV, los descarga de S3 y verifica su sha256 contra el
 #    manifiesto publicado con `python -m db athena publicar`. Sin datos no arranca: falla con un mensaje claro.
@@ -8,10 +8,10 @@
 set -eu
 
 con_rds() { [ -n "${HLF_DATABASE_URL:-}${HLF_DB_SECRET_ID:-}" ]; }
-es_api() { case "$*" in *uvicorn*) return 0 ;; *) return 1 ;; esac; }
+lee_la_base() { case "$*" in *uvicorn*|*servicios.nocturno*) return 0 ;; *) return 1 ;; esac; }
 
-if con_rds && es_api "$@"; then
-    echo "API con RDS: los datos se leen de la base (no se descargan CSV)"
+if con_rds && lee_la_base "$@"; then
+    echo "Con RDS: los datos se leen de la base (no se descargan CSV)"
     exec "$@"
 fi
 

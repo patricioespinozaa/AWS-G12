@@ -11,7 +11,7 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 | [F0003](F0003-flujos-aws-datos.md) | Estructura de datos de los flujos AWS: reloj, `consulta`, S3 + Athena | Hecha (probada en AWS) | F0002 | S3, Athena, Glue Data Catalog |
 | [F0004](F0004-despliegue-frontend-backend.md) | Despliegue del frontend y el backend en AWS | Hecha (desplegada en `demo`) | F0003 | CloudFront, S3, ECS Fargate, ALB, ECR, VPC, CDK |
 | [F0005](F0005-persistencia-app-rds.md) | La app usa RDS, con cargas de datos incrementales y versionadas | Hecha (desplegada en `demo`) | F0004 | RDS, S3 |
-| [F0006](F0006-proceso-nocturno-reloj.md) | Proceso nocturno y reloj de la demo en AWS | Plan | F0005 | EventBridge Scheduler, ECS (tarea programada), S3, Athena |
+| [F0006](F0006-proceso-nocturno-reloj.md) | Consolidación nocturna, recálculo por carga e histórico | Implementado | F0005 | EventBridge Scheduler, ECS, RDS, S3, Athena |
 | [F0007](F0007-autenticacion-roles.md) | Autenticación y roles del equipo clínico | Plan | F0004 | Cognito |
 | [F0008](F0008-explicaciones-bedrock.md) | Explicaciones con IA generativa conectadas a Bedrock | Plan | F0004 | Bedrock, Guardrails |
 | [F0009](F0009-consulta-lenguaje-natural.md) | Consulta en lenguaje natural del equipo clínico | Plan | F0005, F0007, F0008 | Bedrock Knowledge Bases, S3 Vectors, Athena, Lambda |
@@ -19,6 +19,8 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 | [F0011](F0011-asistente-voz.md) | Asistente del paciente por teléfono (voz) | Plan | F0010 | Amazon Connect, Lex V2, Polly, Lambda |
 | [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos: subida a S3 y lectura asistida | Plan | F0005, F0010 | S3, Textract, Bedrock |
 | [F0013](F0013-observabilidad-seguridad-costos.md) | Observabilidad, seguridad y control de costos | Plan | F0004 (se amplía con cada feature) | CloudWatch, WAF, CloudTrail, Budgets, AWS Backup |
+
+Los pendientes que dejaron las features ya implementadas, y las preguntas abiertas para el HLF, están en [pendientes.md](pendientes.md).
 
 **Hecha (DDL)** significa que las tablas, vistas y roles existen y están probados, pero la app todavía no los usa. Conectarlos es el trabajo de F0005 en adelante.
 
@@ -31,7 +33,7 @@ flowchart LR
     F4 --> F7[F0007 Autenticación]
     F4 --> F8[F0008 Bedrock explicaciones]
     F4 --> F13[F0013 Observabilidad]
-    F5 --> F6[F0006 Nocturno y reloj]
+    F5 --> F6[F0006 Consolidación]
     F5 --> F9[F0009 Consulta lenguaje natural]
     F7 --> F9
     F8 --> F9
@@ -42,7 +44,7 @@ flowchart LR
     F10 --> F12[F0012 Exámenes OCR]
 ```
 
-**Para la demo del hackatón** el camino mínimo es F0004 → F0005 → F0006 → F0008: la app publicada en AWS, con datos en RDS, el reloj avanzando y las explicaciones de Bedrock. F0009 a F0011 son la visión (los canales con IA). F0007 y F0013 son obligatorias antes de usar datos reales del HLF.
+**Para la demo del hackatón** el camino mínimo es F0004 → F0005 → F0006 → F0008: la app publicada en AWS, con datos en RDS, cargas por periodo que mueven la cola y las explicaciones de Bedrock. F0009 a F0011 son la visión (los canales con IA). F0007 y F0013 son obligatorias antes de usar datos reales del HLF.
 
 ## Estructura de carpetas objetivo
 
@@ -54,7 +56,7 @@ priorizacion/           Motor de dominio (reglas, evaluación, explicación). Si
 db/                     Esquemas SQL, carga, verificación y capa S3 + Athena
 servicios/              Procesos que corren fuera de la API, uno por carpeta (handler + requirements + tests)
   comun/                Conexión a RDS, cliente de Bedrock, logging estructurado: compartido por los servicios
-  nocturno/             F0006: tarea programada (proceso nocturno y tick del reloj)
+  nocturno/             F0006: consolidación nocturna con buzón (EventBridge → tarea ECS)
   preparacion_kb/       F0009: genera documentos de la Knowledge Base
   consulta_ia/          F0009: responde preguntas del equipo clínico
   asistente/            F0010 y F0011: lógica común de WhatsApp y voz

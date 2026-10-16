@@ -13,6 +13,8 @@ router = APIRouter()
 def meta():
     return {
         "fecha_referencia": config.FECHA_REFERENCIA.isoformat(),
+        "datos_al": config.FECHA_REFERENCIA.isoformat(),          # fecha de corte de los datos (F0006)
+        "modo_fecha": E.registro.modo_fecha(),
         "fecha_min": E.repo.fecha_min.isoformat(),
         "especialidades": sorted({s.especialidad for s in E.repo.solicitudes.values()}),
         "version_reglas": R.VERSION_REGLAS,

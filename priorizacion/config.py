@@ -40,3 +40,11 @@ USUARIA = os.environ.get("HLF_USUARIA", "administradora")
 S3_BUCKET = os.environ.get("HLF_S3_BUCKET", "")
 S3_PREFIJO = os.environ.get("HLF_S3_PREFIJO", "hlf").strip("/")
 CARGAS_DIR = DB_PATH.parent / "cargas"
+
+# Consolidación nocturna (F0006). El buzón es donde llegan las exportaciones sin intervención de la Administradora:
+# en AWS, s3://<bucket>/<prefijo>/entrada/<carpeta>/; en local, la carpeta HLF_BUZON (si se define).
+BUZON_LOCAL = os.environ.get("HLF_BUZON", "")
+# Con errores de validación la carga queda "fallida" y se avisa; sin errores se confirma sola (=0: solo vista previa).
+AUTOCONFIRMAR = os.environ.get("HLF_AUTOCONFIRMAR", "1") == "1"
+# Publicar en Athena (raw y las noches tocadas de la serie) al terminar cada consolidación.
+ATHENA_PUBLICAR = os.environ.get("HLF_ATHENA_PUBLICAR", "0") == "1"

@@ -21,6 +21,7 @@ from constructs import Construct
 from config.entornos import Entorno
 
 from .datos import DatosStack
+from .nocturno import ConsolidacionNocturna
 from .red import RedStack
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -121,6 +122,16 @@ class BackendStack(Stack):
 
         # Lo que necesita `aws ecs run-task` para correr comandos puntuales (p. ej. python -m db restaurar)
         subredes = red.vpc.select_subnets(subnet_type=red.tipo_subred_backend).subnet_ids
+
+        # Consolidación nocturna (F0006): solo con RDS, que es donde viven las versiones y el histórico
+        self.nocturno: ConsolidacionNocturna | None = None
+        if datos.rds is not None:
+            self.nocturno = ConsolidacionNocturna(
+                self, "Nocturno", cluster=cluster, imagen=imagen, variables=variables, bucket=datos.bucket,
+                prefijo_s3=entorno.prefijo_s3, secreto_db=datos.rds.secret, grupo_logs=grupo_logs,
+                subredes=subredes, security_group=red.sg_backend, ip_publica=red.ip_publica_backend,
+                cpu=entorno.backend_cpu, memoria_mib=entorno.backend_memoria_mib)
+            CfnOutput(self, "SalidaTareaNocturna", value=self.nocturno.tarea.task_definition_arn)
         CfnOutput(self, "SalidaCluster", value=cluster.cluster_name)
         CfnOutput(self, "SalidaServicio", value=servicio.service_name)
         CfnOutput(self, "SalidaDefinicionTarea", value=tarea.task_definition_arn)

@@ -27,31 +27,26 @@ Agrega tres piezas a lo definido en [F0001](F0001-subida-datos-aws.md) (`raw`) y
 | **A · Lambda de preparación** | `raw.*` (hasta la fecha de corte) | S3 `kb/`, `consulta.ingesta_kb`, `consulta.documento_kb` |
 | **B · WhatsApp** | `canal.v_ia_*` (paciente verificado, a la fecha de corte), Knowledge Base del paciente (solo FAQ) | `canal.conversacion`, `verificacion_identidad`, `turno`, `divulgacion`, `mensaje_paciente`, `evidencia_externa`, `derivacion_humana` |
 | **C · Teléfono** | Igual que WhatsApp | Igual que WhatsApp, más `conversacion.uri_grabacion` si hay consentimiento |
-| **D · Reloj o proceso nocturno** | `priorizacion.reloj`, `raw.*` | `priorizacion.serie_nocturna`, `propuesta_prioridad`, `estimacion_espera`; S3 `historial/…/fecha=…/` |
+| **D · Consolidación (F0006)** | `priorizacion.reloj`, `raw.*` | `priorizacion.serie_nocturna`, `propuesta_prioridad`, `estimacion_espera`; S3 `historial/…/fecha=…/` |
 
-## Reloj de la demo (flujo D)
+## Fecha de corte (flujo D)
 
-`priorizacion.reloj` tiene una sola fila. En modo `real`, la fecha de corte es hoy. En modo `demo`, es una fecha simulada que avanza en cada *tick*.
+> **Actualizado en [F0006](F0006-proceso-nocturno-reloj.md).** Los datos del HLF no llegan en tiempo real: llegan por exportaciones de periodos. Por eso la fecha de corte es la **de los datos**, no la del calendario, y el reloj que avanzaba solo (`avanzar_reloj`, modo `demo`) se eliminó.
 
-- `priorizacion.fecha_corte()` devuelve la fecha vigente. Es `SECURITY DEFINER`, así que el rol del asistente la usa sin poder leer `priorizacion`.
-- `priorizacion.avanzar_reloj(dias)` la adelanta y devuelve la nueva fecha. En modo real no hace nada y devuelve NULL.
+`priorizacion.reloj` tiene una sola fila con dos modos:
+
+- `datos` (por defecto): la fecha de corte es `raw.carga_lote.fecha_corte` de la última versión aplicada (el fin del periodo declarado o, si no hay, la última fecha con datos).
+- `manual`: una fecha fija, para ensayos (`fecha_manual`).
+
+`priorizacion.fecha_corte()` devuelve la fecha vigente. Es `SECURITY DEFINER`, así que el rol del asistente la usa sin poder leer `priorizacion`.
 - **Respetan la fecha de corte:** `v_prioridad_vigente` (solo decisiones hasta esa fecha), las tres vistas `v_ia_*` (nada posterior; una cita histórica posterior aparece como próxima y `programada`), `consulta.pregunta.fecha_corte` y `consulta.ingesta_kb.fecha_corte`.
 
-Tick de la demo (EventBridge Scheduler → Lambda, cada ~2 minutos):
-
-```sql
-SELECT priorizacion.avanzar_reloj();          -- 1. el día siguiente (dias_por_tick)
--- 2. el motor evalúa las solicitudes a priorizacion.fecha_corte() y escribe serie_nocturna y estimacion_espera
--- 3. python -m db athena exportar --desde <fecha> --hasta <fecha>   (partición de esa noche en S3)
-```
-
-Desde la línea de comandos:
+Cuando entra una exportación (vista Cargas o buzón nocturno), el pipeline de consolidación suma las noches nuevas a `serie_nocturna`, estima la espera a la nueva fecha de corte y publica en S3 solo las particiones que cambiaron (detalle en F0006).
 
 ```bash
-python -m db reloj --demo 2026-06-01 --dias-por-tick 1   # entra en modo demo
-python -m db reloj --avanzar                              # un tick
-python -m db reloj                                        # muestra modo y fecha de corte
-python -m db reloj --real                                 # vuelve a la fecha real
+python -m db reloj                       # muestra modo y fecha de corte
+python -m db reloj --fijar 2026-06-01    # modo manual (ensayo)
+python -m db reloj --datos               # vuelve a la fecha de los datos
 ```
 
 > **Límite del dataset:** `raw.lista_espera.estado` es el estado **final** (atendido, fallecido…) y no trae fecha de egreso. Con el reloj en el pasado, una solicitud ya atendida sigue mostrándose con ese estado. El motor calcula la cola con sus propias reglas a la fecha de corte; el asistente informa la posición desde `estimacion_espera`, no desde ese campo.
@@ -298,7 +293,7 @@ python -m db permisos                     # roles de la base, incluidos los del 
 python -m db athena publicar              # raw a S3 + tablas en Athena + verificación
 python -m db athena exportar              # historial nocturno de RDS a S3 hasta la fecha de corte
 python -m db athena verificar             # conteos y huérfanos en Athena contra el manifiesto
-python -m db reloj --demo 2026-06-01      # reloj de la demo
+python -m db reloj                        # fecha de corte (la de los datos)
 ```
 
 Variables: `HLF_S3_BUCKET` (obligatoria), `HLF_S3_PREFIJO` (por defecto `hlf`), `HLF_ATHENA_WORKGROUP` (`hlf-priorizacion`), `HLF_ATHENA_DB` (`hlf`, de donde salen `hlf_raw` y `hlf_historial`) y `AWS_REGION`. Requiere `boto3` y `pyarrow`.

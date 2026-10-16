@@ -1,8 +1,9 @@
 """Cargas por periodo (F0005 fase B): la Administradora sube los CSV exportados de un periodo nuevo.
 
 Flujo: subir → vista previa (nada se escribe en raw) → confirmar o descartar. Al confirmar, los datos se SUMAN
-a lo existente (nunca se borra), queda una versión nueva y se recalculan las solicitudes de los pacientes
-afectados. Requiere RDS: en modo local (CSV + SQLite) no hay versiones que guardar.
+a lo existente (nunca se borra) y queda una versión nueva; la respuesta vuelve de inmediato y la consolidación
+(F0006) corre en segundo plano: recalcula los pacientes afectados, suma las noches nuevas al histórico y estima la
+espera a la nueva fecha de corte. La app sigue su avance en /api/nocturno/estado. Requiere RDS.
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-from priorizacion import archivos, config, nocturno
+from priorizacion import archivos, config
 
 from .. import estado as E
 from ..serializacion import a_json
@@ -107,6 +108,7 @@ def detalle(id_carga: int):
 @router.post("/api/cargas/{id_carga}/confirmar")
 def confirmar(id_carga: int):
     from db import carga
+    E.exigir_sin_recalculo()
     with _conexion() as conn:
         fila = next((c for c in carga.historial(conn) if c["id_carga"] == id_carga), None)
         if fila is None:
@@ -122,15 +124,9 @@ def confirmar(id_carga: int):
             raise HTTPException(409, str(e))
         finally:
             shutil.rmtree(carpeta, ignore_errors=True)
-    # Los datos nuevos ya están en raw: se recarga el repositorio y se recalculan los pacientes afectados
-    with E.escritura:
-        E.recargar_datos()
-        afectados = set(resultado["pacientes_afectados"])
-        ids = [s.id_solicitud for s in E.repo.solicitudes.values() if s.id_paciente in afectados]
-        recalculo = nocturno.recalcular_solicitudes(E.repo, E.registro, ids, alcance=f"carga {resultado['version']}") \
-            if ids else {"n_propuestas": 0, "n_evaluaciones": 0}
-    return a_json({**resultado, "solicitudes_recalculadas": len(ids), "propuestas_nuevas": recalculo["n_propuestas"],
-                   "fecha_referencia": config.FECHA_REFERENCIA.isoformat()})
+    # Los datos nuevos ya están en raw: la consolidación corre en segundo plano (recarga el repositorio primero)
+    E.consolidar_en_segundo_plano("carga", resultado["pacientes_afectados"], resultado["id_carga"], recargar=True)
+    return a_json({**resultado, "recalculo": "en_curso"})
 
 
 @router.post("/api/cargas/{id_carga}/descartar")

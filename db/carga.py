@@ -217,10 +217,20 @@ def _nueva_carga(conn: psycopg.Connection, modo: str, origen: str, cargado_por: 
 def _aplicar_version(conn: psycopg.Connection, id_carga: int, filas: dict, resumen: dict,
                      advertencias: list | None = None) -> int:
     version = conn.execute("SELECT coalesce(max(version), 0) + 1 FROM raw.carga_lote").fetchone()[0]
+    # Fecha de corte de la versión (F0006): el fin del periodo declarado o, si no hay, la última fecha con datos
     conn.execute("UPDATE raw.carga_lote SET estado = 'aplicada', version = %s, fin = now(), filas = %s, "
-                 "resumen = %s, advertencias = %s WHERE id_carga = %s",
-                 (version, json.dumps(filas), json.dumps(resumen), json.dumps(advertencias or []), id_carga))
+                 "resumen = %s, advertencias = %s, fecha_corte = coalesce(periodo_hasta, %s) WHERE id_carga = %s",
+                 (version, json.dumps(filas), json.dumps(resumen), json.dumps(advertencias or []),
+                  ultima_fecha_con_datos(conn), id_carga))
     return version
+
+
+def ultima_fecha_con_datos(conn: psycopg.Connection) -> date | None:
+    return conn.execute(
+        "SELECT max(f) FROM (SELECT max(fecha_evento) AS f FROM raw.eventos_clinicos "
+        "UNION ALL SELECT max(fecha_medicion) FROM raw.mediciones UNION ALL SELECT max(fecha_cita) FROM raw.citaciones "
+        "UNION ALL SELECT max(fecha) FROM raw.agenda_box UNION ALL SELECT max(fecha_ingreso_lista) FROM raw.lista_espera) x"
+    ).fetchone()[0]
 
 
 def cargar(conn: psycopg.Connection, data_dir: Path, reemplazar: bool = False, progreso=print,

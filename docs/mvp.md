@@ -21,7 +21,8 @@ La primera vez, la API corre la consolidación nocturna sobre toda la historia (
 | Tarea | Comando |
 |---|---|
 | Tests (motor + API) | `python -m pytest` |
-| Consolidación nocturna por línea de comandos | `python -m priorizacion.nocturno` |
+| Consolidación con buzón (F0006) | `python -m servicios.nocturno --buzon data/buzon` |
+| Recalcular la historia completa | `python -m priorizacion.nocturno` |
 | Documentación interactiva de la API | http://127.0.0.1:8000/docs |
 | Activar explicaciones con IA generativa | `pip install "anthropic[bedrock]"` y variables `LLM_PROVEEDOR=bedrock`, `AWS_REGION`, `BEDROCK_MODEL_ID` (por defecto `anthropic.claude-opus-5-5`), con credenciales AWS |
 

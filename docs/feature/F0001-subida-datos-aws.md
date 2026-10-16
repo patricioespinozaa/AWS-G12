@@ -300,7 +300,7 @@ Si la instancia sigue viva y solo se borraron los datos, basta con el paso 3. `r
 | `python -m db verificar` | `raw`: conteos contra la última carga, huérfanos, eventos posteriores a la defunción e indicadores informativos. `priorizacion`, `canal` y `consulta`: tablas, vistas, llaves foráneas, triggers de auditoría, catálogos y reloj |
 | `python -m db permisos` | Crea los roles `hlf_lectura_raw`, `hlf_app`, `hlf_asistente_ia`, `hlf_preparacion_kb` y `hlf_consulta_ia`. Requiere CREATEROLE |
 | `python -m db borrar --esquema E --confirmar` | Elimina un esquema (`raw`, `priorizacion`, `canal`, `consulta`) o `todos`. Se niega a borrar uno del que depende otro |
-| `python -m db reloj` | Muestra o cambia la fecha de corte: `--demo AAAA-MM-DD`, `--avanzar [N]`, `--real` ([F0003](F0003-flujos-aws-datos.md)) |
+| `python -m db reloj` | Muestra la fecha de corte o la cambia: `--fijar AAAA-MM-DD` (ensayo), `--datos` (la de los datos, F0006) ([F0003](F0003-flujos-aws-datos.md)) |
 | `python -m db athena …` | Capa S3 + Athena: `publicar`, `exportar`, `verificar`, `consultar` ([F0003](F0003-flujos-aws-datos.md)) |
 
 Opciones: `--url` para indicar la conexión en el comando, `--datos <carpeta>` para cargar desde otra carpeta de CSV (por defecto `HLF_DATA_DIR`) y `--esquema` en `esquema`, `permisos` y `borrar`.

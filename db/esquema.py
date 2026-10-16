@@ -59,3 +59,15 @@ def aplicar(conn: psycopg.Connection, esquema: str = "raw") -> list[str]:
 
 def aplicar_permisos(conn: psycopg.Connection, esquema: str = "raw") -> list[str]:
     return _ejecutar(conn, sorted((SQL_DIR / esquema).glob("9*.sql")))
+
+
+def migrar(conn: psycopg.Connection) -> None:
+    """Aplica todos los esquemas en orden de dependencia (idempotente). La usan la API al arrancar y la
+    consolidación nocturna: nunca corren sobre un esquema viejo. Con varios procesos a la vez, uno solo migra."""
+    conn.execute("SELECT pg_advisory_lock(hashtext('hlf_migraciones'))")
+    try:
+        with conn.transaction():
+            for nombre in ESQUEMAS:
+                aplicar(conn, nombre)
+    finally:
+        conn.execute("SELECT pg_advisory_unlock(hashtext('hlf_migraciones'))")

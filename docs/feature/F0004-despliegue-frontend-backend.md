@@ -47,7 +47,7 @@ flowchart LR
 | Datos en el contenedor | El `entrypoint` descarga los CSV de S3 y verifica el sha256 contra el manifiesto | La imagen no lleva datos del hospital. Se reutiliza lo publicado con `python -m db athena publicar` |
 | Despliegues | `min_healthy_percent=0`, circuit breaker con rollback | Con una sola tarea con estado no puede haber dos versiones escribiendo a la vez. F0005 lo cambia a despliegue sin corte |
 
-**Timeouts:** CloudFront espera hasta 60 s por respuesta del origen y el ALB 120 s. `POST /api/nocturno/ejecutar` puede tardar más; F0006 lo convierte en tarea asíncrona.
+**Timeouts:** CloudFront espera hasta 60 s por respuesta del origen y el ALB 120 s. `POST /api/nocturno/ejecutar` puede tardar más: desde F0006 responde de inmediato (202) y corre en segundo plano.
 
 ## Cambios por carpeta
 

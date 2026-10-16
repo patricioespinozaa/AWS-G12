@@ -20,12 +20,15 @@ RUN pip install -r requirements/base.txt
 COPY priorizacion/ priorizacion/
 COPY db/ db/
 COPY api/ api/
+COPY servicios/ servicios/
 COPY docker/backend/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# Usuario sin privilegios; /app/data es el único directorio escribible (datos descargados y SQLite del MVP)
+# Usuario sin privilegios; /app/data es el único directorio escribible (datos descargados y SQLite del MVP).
+# El sed deja el entrypoint en LF aunque se haya editado en Windows: con CRLF el contenedor no arranca.
 RUN useradd --create-home --uid 10001 hlf \
     && mkdir -p /app/data/dataset /app/data/processed \
     && chown -R hlf:hlf /app/data \
+    && sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
     && chmod 0755 /usr/local/bin/entrypoint.sh
 USER hlf
 

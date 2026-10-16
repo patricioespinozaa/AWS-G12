@@ -75,9 +75,23 @@ CREATE TABLE IF NOT EXISTS mensaje_paciente (
 
 CREATE TABLE IF NOT EXISTS corrida_nocturna (
     id_corrida INTEGER PRIMARY KEY AUTOINCREMENT, inicio TEXT, fin TEXT, desde TEXT, hasta TEXT,
-    alcance TEXT, version_reglas TEXT, n_evaluaciones INTEGER, n_propuestas INTEGER, segundos REAL
+    alcance TEXT, version_reglas TEXT, n_evaluaciones INTEGER, n_propuestas INTEGER, segundos REAL,
+    origen TEXT, estado TEXT, id_carga INTEGER, detalle TEXT, error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS estimacion_espera (
+    id_solicitud TEXT, fecha_calculo TEXT, prioridad_vigente TEXT, posicion_vigente INTEGER, total_cola INTEGER,
+    dias_estimados_min INTEGER, dias_estimados_max INTEGER, confianza TEXT, metodo TEXT, version_metodo TEXT,
+    publicable INTEGER, PRIMARY KEY (id_solicitud, fecha_calculo)
 );
 """
+# Columnas agregadas después de la primera versión (F0006): bases SQLite locales existentes
+COLUMNAS_NUEVAS = {"corrida_nocturna": [("origen", "TEXT"), ("estado", "TEXT"), ("id_carga", "INTEGER"),
+                                        ("detalle", "TEXT"), ("error", "TEXT")]}
+COLUMNAS_CORRIDA = ["id_corrida", "inicio", "fin", "desde", "hasta", "alcance", "version_reglas", "n_evaluaciones",
+                    "n_propuestas", "segundos", "origen", "estado", "id_carga", "detalle", "error"]
+COLUMNAS_ESTIMACION = ["id_solicitud", "fecha_calculo", "prioridad_vigente", "posicion_vigente", "total_cola",
+                       "dias_estimados_min", "dias_estimados_max", "confianza", "metodo", "version_metodo", "publicable"]
 
 
 class Registro(Protocol):
@@ -109,6 +123,16 @@ class Registro(Protocol):
     def mensajes(self) -> pd.DataFrame: ...
     def registrar_corrida(self, **kw): ...
     def corridas(self) -> pd.DataFrame: ...
+    # F0006: consolidación
+    def fecha_corte(self) -> date | None: ...
+    def modo_fecha(self) -> str: ...
+    def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]): ...
+    def iniciar_corrida(self, origen: str, alcance: str, desde: date, hasta: date, id_carga: int | None = None) -> int: ...
+    def terminar_corrida(self, id_corrida: int, estado: str, n_evaluaciones: int = 0, n_propuestas: int = 0,
+                         detalle: dict | None = None, error: str | None = None): ...
+    def corrida_en_curso(self) -> bool: ...
+    def guardar_estimaciones(self, fecha: date, estimaciones: pd.DataFrame): ...
+    def estimaciones(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
 
 
 def crear_registro() -> Registro:
@@ -128,6 +152,11 @@ class RegistroSQLite:
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
         with self.conexion() as c:
             c.executescript(ESQUEMA)
+            for tabla, columnas in COLUMNAS_NUEVAS.items():
+                existentes = {r[1] for r in c.execute(f"PRAGMA table_info({tabla})")}
+                for nombre, tipo in columnas:
+                    if nombre not in existentes:
+                        c.execute(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}")
 
     @contextmanager
     def conexion(self):
@@ -156,6 +185,7 @@ class RegistroSQLite:
                       ("decision_clinica", "evidencia_externa", "mensaje_paciente", "corrida_nocturna")]
             partes.append(c.execute("SELECT COUNT(*) FROM evidencia_externa WHERE estado != 'pendiente'").fetchone()[0])
             partes.append(c.execute("SELECT COUNT(*) FROM mensaje_paciente WHERE estado != 'pendiente'").fetchone()[0])
+            partes.append(c.execute("SELECT COUNT(*) FROM corrida_nocturna WHERE estado = 'completa'").fetchone()[0])
         return "-".join(map(str, partes))
 
     # -- serie nocturna ------------------------------------------------------------------------
@@ -294,11 +324,64 @@ class RegistroSQLite:
 
     # -- bitácora -----------------------------------------------------------------------------
     def registrar_corrida(self, **kw):
+        origen = kw.get("origen") or ("completo" if kw["alcance"] == "historia completa" else "solicitud")
         with self.conexion() as c:
             c.execute("INSERT INTO corrida_nocturna (inicio, fin, desde, hasta, alcance, version_reglas, "
-                      "n_evaluaciones, n_propuestas, segundos) VALUES (?,?,?,?,?,?,?,?,?)",
+                      "n_evaluaciones, n_propuestas, segundos, origen, estado) VALUES (?,?,?,?,?,?,?,?,?,?,'completa')",
                       (kw["inicio"], kw["fin"], kw["desde"], kw["hasta"], kw["alcance"], kw["version_reglas"],
-                       kw["n_evaluaciones"], kw["n_propuestas"], kw["segundos"]))
+                       kw["n_evaluaciones"], kw["n_propuestas"], kw["segundos"], origen))
 
     def corridas(self) -> pd.DataFrame:
-        return self.consulta("SELECT * FROM corrida_nocturna ORDER BY id_corrida DESC")
+        return self.consulta(f"SELECT {', '.join(COLUMNAS_CORRIDA)} FROM corrida_nocturna ORDER BY id_corrida DESC")
+
+    # -- consolidación (F0006) ----------------------------------------------------------------
+    def fecha_corte(self) -> date | None:
+        """En modo local no hay versiones de datos: la API usa la última fecha con datos."""
+        return None
+
+    def modo_fecha(self) -> str:
+        return "local"
+
+    def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]):
+        """Reemplaza solo las noches indicadas de la serie (todas las especialidades)."""
+        with self.conexion() as c:
+            lista = sorted(fechas)
+            for i in range(0, len(lista), 500):
+                lote = lista[i:i + 500]
+                c.execute(f"DELETE FROM serie_nocturna WHERE fecha IN ({','.join('?' * len(lote))})", lote)
+            serie.to_sql("serie_nocturna", c, if_exists="append", index=False, chunksize=20000)
+
+    def iniciar_corrida(self, origen: str, alcance: str, desde: date, hasta: date, id_carga: int | None = None) -> int:
+        from . import reglas as R
+        with self.conexion() as c:
+            return c.execute("INSERT INTO corrida_nocturna (inicio, desde, hasta, alcance, version_reglas, origen, "
+                             "estado, id_carga) VALUES (?,?,?,?,?,?,'en_curso',?)",
+                             (datetime.now().isoformat(timespec="seconds"), desde.isoformat(), hasta.isoformat(),
+                              alcance, R.VERSION_REGLAS, origen, id_carga)).lastrowid
+
+    def terminar_corrida(self, id_corrida: int, estado: str, n_evaluaciones: int = 0, n_propuestas: int = 0,
+                         detalle: dict | None = None, error: str | None = None):
+        with self.conexion() as c:
+            inicio = c.execute("SELECT inicio FROM corrida_nocturna WHERE id_corrida = ?", (id_corrida,)).fetchone()[0]
+            fin = datetime.now()
+            c.execute("UPDATE corrida_nocturna SET fin = ?, estado = ?, n_evaluaciones = ?, n_propuestas = ?, "
+                      "segundos = ?, detalle = ?, error = ? WHERE id_corrida = ?",
+                      (fin.isoformat(timespec="seconds"), estado, n_evaluaciones, n_propuestas,
+                       round((fin - datetime.fromisoformat(inicio)).total_seconds(), 1),
+                       json.dumps(detalle or {}, ensure_ascii=False, default=str), error, id_corrida))
+
+    def corrida_en_curso(self) -> bool:
+        with self.conexion() as c:
+            return c.execute("SELECT EXISTS (SELECT 1 FROM corrida_nocturna WHERE estado = 'en_curso')").fetchone()[0] == 1
+
+    def guardar_estimaciones(self, fecha: date, estimaciones: pd.DataFrame):
+        with self.conexion() as c:
+            c.execute("DELETE FROM estimacion_espera WHERE fecha_calculo = ?", (fecha.isoformat(),))
+            if len(estimaciones):
+                filas = estimaciones[COLUMNAS_ESTIMACION].assign(publicable=estimaciones["publicable"].astype(int))
+                filas.to_sql("estimacion_espera", c, if_exists="append", index=False)
+
+    def estimaciones(self, id_solicitud: str | None = None) -> pd.DataFrame:
+        filtro, params = ("WHERE id_solicitud = ?", (id_solicitud,)) if id_solicitud else ("", ())
+        return self.consulta(f"SELECT {', '.join(COLUMNAS_ESTIMACION)} FROM estimacion_espera {filtro} "
+                             f"ORDER BY fecha_calculo, id_solicitud", params)

@@ -122,6 +122,15 @@ function Cabecera({ d }: { d: FichaPaciente }) {
           {r.excluido ? <span className="suave">—</span> : ETIQUETA_DISP[d.disponibilidad.estado]}
           {!r.excluido && d.disponibilidad.accion && <div><small>{d.disponibilidad.accion}</small></div>}
         </div>
+        <div className="dato-nivel" title="Rango según la posición vigente y las atenciones de las últimas 8 semanas. Uso interno: no se informa al paciente.">
+          <span className="etiqueta">Espera estimada (uso interno)</span>
+          {r.excluido || !d.estimacion ? <span className="suave">Sin estimación</span> : (
+            <>
+              <b>{d.estimacion.dias_estimados_min}–{d.estimacion.dias_estimados_max} días</b>
+              <div><small>Posición {d.estimacion.posicion_vigente} de {d.estimacion.total_cola} · confianza {d.estimacion.confianza} · al {d.estimacion.fecha_calculo}</small></div>
+            </>
+          )}
+        </div>
       </div>
       {r.excluido && <Aviso tipo="info">Fuera de la lista activa al {d.corte}: {r.motivo_exclusion}.</Aviso>}
       {r.alerta && <Aviso tipo="error">⚠️ <b>Alerta para revisión clínica prioritaria.</b> {r.motivos_alerta.join(" · ")}</Aviso>}

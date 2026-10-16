@@ -53,8 +53,13 @@ MENSAJES = """
 CORRIDAS = """
     SELECT id_corrida, to_char(inicio, 'YYYY-MM-DD"T"HH24:MI:SS') AS inicio,
            to_char(fin, 'YYYY-MM-DD"T"HH24:MI:SS') AS fin, desde::text AS desde, hasta::text AS hasta, alcance,
-           version_reglas, n_evaluaciones, n_propuestas, segundos::float8 AS segundos
+           version_reglas, n_evaluaciones, n_propuestas, segundos::float8 AS segundos, origen, estado, id_carga,
+           detalle::text AS detalle, error
     FROM priorizacion.corrida_nocturna ORDER BY id_corrida DESC"""
+ESTIMACIONES = """
+    SELECT id_solicitud, fecha_calculo::text AS fecha_calculo, prioridad_vigente, posicion_vigente, total_cola,
+           dias_estimados_min, dias_estimados_max, confianza, metodo, version_metodo, publicable::int AS publicable
+    FROM priorizacion.estimacion_espera"""
 FUENTE_EXPLICACION = {"plantilla": "plantilla", "bedrock": "llm", "llm": "llm"}
 
 
@@ -125,12 +130,26 @@ class RegistroPostgres:
                           "WHERE s.id_solicitud = le.id_solicitud AND le.especialidad = %s", (especialidad,))
             else:
                 c.execute("DELETE FROM priorizacion.serie_nocturna")
-            filas = serie[COLUMNAS_SERIE].astype(object).where(serie[COLUMNAS_SERIE].notna(), None)
-            with c.cursor().copy(f"COPY priorizacion.serie_nocturna ({', '.join(COLUMNAS_SERIE)}) FROM STDIN") as copia:
-                for f in filas.itertuples(index=False):
-                    copia.write_row((f.id_solicitud, f.fecha, f.puntaje, f.puntaje_nivel, f.nivel_propuesto,
-                                     f.prioridad_vigente, f.cambio, bool(f.alerta), f.motivo_principal,
-                                     int(f.posicion_dinamica), int(f.posicion_estatica), int(f.total_cola)))
+            self._copiar_serie(c, serie)
+
+    @staticmethod
+    def _copiar_serie(c: psycopg.Connection, serie: pd.DataFrame):
+        if serie.empty:
+            return
+        for anio in sorted({int(f[:4]) for f in serie["fecha"].astype(str).unique()}):
+            c.execute("SELECT priorizacion.asegurar_particion_serie(%s)", (anio,))
+        filas = serie[COLUMNAS_SERIE].astype(object).where(serie[COLUMNAS_SERIE].notna(), None)
+        with c.cursor().copy(f"COPY priorizacion.serie_nocturna ({', '.join(COLUMNAS_SERIE)}) FROM STDIN") as copia:
+            for f in filas.itertuples(index=False):
+                copia.write_row((f.id_solicitud, f.fecha, f.puntaje, f.puntaje_nivel, f.nivel_propuesto,
+                                 f.prioridad_vigente, f.cambio, bool(f.alerta), f.motivo_principal,
+                                 int(f.posicion_dinamica), int(f.posicion_estatica), int(f.total_cola)))
+
+    def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]):
+        """Reemplaza solo las noches indicadas (todas las especialidades). Lo usa la consolidación (F0006)."""
+        with self.conexion() as c:
+            c.execute("DELETE FROM priorizacion.serie_nocturna WHERE fecha = ANY(%s::date[])", (sorted(fechas),))
+            self._copiar_serie(c, serie)
 
     def serie(self, id_solicitud: str | None = None, especialidad: str | None = None) -> pd.DataFrame:
         if id_solicitud:
@@ -258,12 +277,66 @@ class RegistroPostgres:
 
     # -- bitácora -----------------------------------------------------------------------------------
     def registrar_corrida(self, **kw):
+        origen = kw.get("origen") or ("completo" if kw["alcance"] == "historia completa" else "solicitud")
         with self.conexion() as c:
             c.execute("INSERT INTO priorizacion.corrida_nocturna (inicio, fin, desde, hasta, alcance, version_reglas, "
-                      "n_evaluaciones, n_propuestas, segundos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                      "n_evaluaciones, n_propuestas, segundos, origen, estado) "
+                      "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'completa')",
                       (datetime.fromisoformat(kw["inicio"]), datetime.fromisoformat(kw["fin"]), kw["desde"],
                        kw["hasta"], kw["alcance"], kw["version_reglas"], kw["n_evaluaciones"], kw["n_propuestas"],
-                       kw["segundos"]))
+                       kw["segundos"], origen))
 
     def corridas(self) -> pd.DataFrame:
         return self.consulta(CORRIDAS)
+
+    # -- consolidación (F0006) ----------------------------------------------------------------------
+    def fecha_corte(self) -> date | None:
+        """La fecha de los datos: fin del periodo de la última versión aplicada (o la fija del modo manual)."""
+        with self._lock:
+            return self._con().execute("SELECT priorizacion.fecha_corte()").fetchone()[0]
+
+    def modo_fecha(self) -> str:
+        """`datos` (la fecha de la última versión aplicada) o `manual` (fijada para un ensayo)."""
+        with self._lock:
+            fila = self._con().execute("SELECT modo FROM priorizacion.reloj WHERE id = 1").fetchone()
+        return fila[0] if fila else "datos"
+
+    def iniciar_corrida(self, origen: str, alcance: str, desde: date, hasta: date, id_carga: int | None = None) -> int:
+        from . import reglas as R
+        with self.conexion() as c:
+            return c.execute("INSERT INTO priorizacion.corrida_nocturna (inicio, desde, hasta, alcance, version_reglas, "
+                             "origen, estado, id_carga) VALUES (now(), %s, %s, %s, %s, %s, 'en_curso', %s) "
+                             "RETURNING id_corrida",
+                             (desde, max(desde, hasta), alcance, R.VERSION_REGLAS, origen, id_carga)).fetchone()[0]
+
+    def terminar_corrida(self, id_corrida: int, estado: str, n_evaluaciones: int = 0, n_propuestas: int = 0,
+                         detalle: dict | None = None, error: str | None = None):
+        with self.conexion() as c:
+            c.execute("UPDATE priorizacion.corrida_nocturna SET fin = now(), estado = %s, n_evaluaciones = %s, "
+                      "n_propuestas = %s, segundos = extract(epoch FROM now() - inicio), detalle = %s, error = %s "
+                      "WHERE id_corrida = %s",
+                      (estado, n_evaluaciones, n_propuestas, json.dumps(detalle or {}, ensure_ascii=False, default=str),
+                       error, id_corrida))
+
+    def corrida_en_curso(self) -> bool:
+        with self._lock:
+            return self._con().execute("SELECT EXISTS (SELECT 1 FROM priorizacion.corrida_nocturna "
+                                       "WHERE estado = 'en_curso')").fetchone()[0]
+
+    def guardar_estimaciones(self, fecha: date, estimaciones: pd.DataFrame):
+        with self.conexion() as c:
+            c.execute("DELETE FROM priorizacion.estimacion_espera WHERE fecha_calculo = %s", (fecha,))
+            if len(estimaciones):
+                with c.cursor() as cur:
+                    cur.executemany(
+                        "INSERT INTO priorizacion.estimacion_espera (id_solicitud, fecha_calculo, prioridad_vigente, "
+                        "posicion_vigente, total_cola, dias_estimados_min, dias_estimados_max, confianza, metodo, "
+                        "version_metodo, publicable) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        [(f.id_solicitud, fecha, f.prioridad_vigente, int(f.posicion_vigente), int(f.total_cola),
+                          int(f.dias_estimados_min), int(f.dias_estimados_max), f.confianza, f.metodo,
+                          f.version_metodo, bool(f.publicable)) for f in estimaciones.itertuples(index=False)])
+
+    def estimaciones(self, id_solicitud: str | None = None) -> pd.DataFrame:
+        if id_solicitud:
+            return self.consulta(ESTIMACIONES + " WHERE id_solicitud = %s ORDER BY fecha_calculo", (id_solicitud,))
+        return self.consulta(ESTIMACIONES + " ORDER BY fecha_calculo, id_solicitud")

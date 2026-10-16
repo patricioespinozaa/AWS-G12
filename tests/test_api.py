@@ -48,3 +48,28 @@ def test_decision_requiere_motivo_y_queda_registrada(cliente):
     ficha = cliente.get("/api/solicitudes/IC-HLF-00002?corte=2026-10-13").json()
     assert ficha["resultado"]["prioridad_vigente"] == "alta"
     assert ficha["solicitud"]["prioridad_inicial"] == "baja"   # nunca se sobrescribe
+
+
+def test_datos_al_y_estimacion_en_la_ficha(cliente):
+    meta = cliente.get("/api/meta").json()
+    assert meta["datos_al"] == meta["fecha_referencia"] == "2026-10-13" and meta["modo_fecha"] == "local"
+    est = cliente.get("/api/solicitudes/IC-HLF-00001?corte=2026-10-13").json()["estimacion"]
+    if est is not None:                                       # sin atenciones recientes no se estima
+        assert est["dias_estimados_max"] >= est["dias_estimados_min"] and est["publicable"] == 0
+
+
+def test_recalculo_completo_en_segundo_plano(cliente):
+    import time
+    r = cliente.post("/api/nocturno/ejecutar")
+    assert r.status_code == 202 and r.json()["en_curso"]
+    assert cliente.post("/api/nocturno/ejecutar").status_code == 409          # uno a la vez
+    assert cliente.post("/api/solicitudes/IC-HLF-00002/decisiones",           # las escrituras esperan
+                        json={"corte": "2026-07-21", "decision": "acepta"}).status_code == 409
+    for _ in range(300):
+        estado = cliente.get("/api/nocturno/estado").json()
+        if not estado["en_curso"]:
+            break
+        time.sleep(1)
+    assert estado["error"] is None and estado["resultado"]["modo"] == "completo"
+    corridas = cliente.get("/api/nocturno").json()["corridas"]
+    assert corridas[0]["origen"] == "completo" and corridas[0]["estado"] == "completa"

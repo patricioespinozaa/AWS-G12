@@ -407,7 +407,7 @@ flowchart TB
         K4["Equidad: cambios por edad, sexo, comuna, previsión"]
     end
 
-    S["Selector de fecha de corte (modo demo)"] -.-> B & P & X & K
+    S["Selector de fecha de corte"] -.-> B & P & X & K
     B -- "clic en paciente" --> P
     P -- "validar" --> D
     D -- "guardar" --> B
