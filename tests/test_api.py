@@ -73,3 +73,8 @@ def test_recalculo_completo_en_segundo_plano(cliente):
     assert estado["error"] is None and estado["resultado"]["modo"] == "completo"
     corridas = cliente.get("/api/nocturno").json()["corridas"]
     assert corridas[0]["origen"] == "completo" and corridas[0]["estado"] == "completa"
+
+
+def test_consulta_requiere_rds_en_modo_local(cliente):
+    assert cliente.get("/api/consulta/estado").status_code == 409
+    assert cliente.post("/api/consulta", json={"texto": "¿Cuántos pacientes hay?"}).status_code == 409

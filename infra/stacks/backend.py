@@ -22,6 +22,7 @@ from constructs import Construct
 from config.entornos import Entorno
 
 from .datos import DatosStack
+from .consulta import ConsultaStack
 from .ia import IaStack
 from .nocturno import ConsolidacionNocturna
 from .red import RedStack
@@ -35,7 +36,7 @@ GRACIA_ARRANQUE = Duration.minutes(6)
 
 class BackendStack(Stack):
     def __init__(self, scope: Construct, id: str, *, entorno: Entorno, red: RedStack, datos: DatosStack,
-                 ia: IaStack | None = None, **kwargs) -> None:
+                 ia: IaStack | None = None, consulta: ConsultaStack | None = None, **kwargs) -> None:
         super().__init__(scope, id, description="HLF priorización: backend (ECS Fargate + ALB interno)", **kwargs)
 
         cluster = ecs.Cluster(self, "Cluster", vpc=red.vpc, container_insights_v2=ecs.ContainerInsights.ENABLED)
@@ -72,6 +73,11 @@ class BackendStack(Stack):
             # Explicaciones con IA (F0008): solo Bedrock, con el guardrail en una versión fija
             variables.update(BEDROCK_GUARDRAIL_ID=ia.guardrail.attr_guardrail_id,
                              BEDROCK_GUARDRAIL_VERSION=ia.version.attr_version)
+        # Consulta en lenguaje natural (F0009): la KB del equipo clínico (la API la consulta; la noche la sincroniza)
+        con_consulta = entorno.llm_proveedor == "bedrock" and consulta is not None and datos.rds is not None
+        if con_consulta:
+            variables.update(HLF_KB_ID=consulta.kb.attr_knowledge_base_id,
+                             HLF_KB_DATA_SOURCE_ID=consulta.fuente.attr_data_source_id)
         if datos.rds is not None:
             # db/conexion.py arma la conexión con el secreto de Secrets Manager; la clave nunca va en variables
             variables.update(HLF_DB_HOST=datos.rds.db_instance_endpoint_address,
@@ -91,6 +97,9 @@ class BackendStack(Stack):
         datos.bucket.grant_read(tarea.task_role, f"{entorno.prefijo_s3}/*")
         if entorno.llm_proveedor == "bedrock" and ia is not None:
             tarea.task_role.add_managed_policy(ia.politica)
+        if con_consulta:
+            tarea.task_role.add_managed_policy(consulta.politica_consulta)
+            tarea.task_role.add_managed_policy(consulta.politica_preparacion)   # botón "Sincronizar" de la vista
         tarea.task_role.add_to_principal_policy(iam.PolicyStatement(
             actions=["ssm:GetParameter"],
             resources=[self.format_arn(service="ssm", resource="parameter",
@@ -147,6 +156,8 @@ class BackendStack(Stack):
                 subredes=subredes, security_group=red.sg_backend, ip_publica=red.ip_publica_backend,
                 cpu=entorno.backend_cpu, memoria_mib=entorno.backend_memoria_mib)
             CfnOutput(self, "SalidaTareaNocturna", value=self.nocturno.tarea.task_definition_arn)
+            if con_consulta:                               # la noche regenera la KB cuando entran datos nuevos
+                self.nocturno.tarea.task_role.add_managed_policy(consulta.politica_preparacion)
         CfnOutput(self, "SalidaCluster", value=cluster.cluster_name)
         CfnOutput(self, "SalidaServicio", value=servicio.service_name)
         CfnOutput(self, "SalidaDefinicionTarea", value=tarea.task_definition_arn)
