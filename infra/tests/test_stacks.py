@@ -293,8 +293,21 @@ def plantillas_voz(tmp_path_factory):
     return "demo", {nombre: Template.from_stack(s) for nombre, s in construir(app, "demo", dist=dist).items()}
 
 
-def test_voz_apagada_por_defecto_en_demo(plantillas):
-    assert "voz" not in plantillas[1]
+def test_voz_solo_en_demo(plantillas):
+    entorno, t = plantillas
+    assert ("voz" in t) == (entorno == "demo")
+
+
+def test_flujo_de_connect_con_los_errores_que_exige_publicar():
+    """Connect no publica un flujo si a una acción le falta una rama de error obligatoria (InvalidContactFlowException)."""
+    flujo = json.loads((Path(__file__).resolve().parents[1] / "connect" / "flujo_entrante.json").read_text(encoding="utf-8"))
+    exigidos = {"ConnectParticipantWithLexBot": {"NoMatchingCondition", "NoMatchingError"},
+                "Compare": {"NoMatchingCondition"},
+                "GetParticipantInput": {"NoMatchingCondition", "NoMatchingError", "InputTimeLimitExceeded"}}
+    for accion in flujo["Actions"]:
+        errores = {e["ErrorType"] for e in accion["Transitions"].get("Errors", [])}
+        assert exigidos.get(accion["Type"], set()) <= errores, accion["Identifier"]
+    assert "Metadata" not in flujo
 
 
 def test_voz_connect_lex_y_grabacion_solo_con_consentimiento(plantillas_voz):
@@ -308,6 +321,8 @@ def test_voz_connect_lex_y_grabacion_solo_con_consentimiento(plantillas_voz):
     assert locale["LocaleId"] == "es_US" and locale["VoiceSettings"] == {"VoiceId": "Lupe", "Engine": "neural"}
     assert all(i["FulfillmentCodeHook"]["Enabled"] for i in locale["Intents"])
     assert any(i.get("ParentIntentSignature") == "AMAZON.FallbackIntent" for i in locale["Intents"])
+    (flujo_res,) = _recursos(t["voz"], "AWS::Connect::ContactFlow").values()
+    assert flujo_res.get("DependsOn")                                          # espera la asociación del bot
     (alias,) = _recursos(t["voz"], "AWS::Lex::BotAlias").values()
     assert "LambdaArn" in json.dumps(alias["Properties"]["BotAliasLocaleSettings"])
     (funcion,) = _recursos(t["voz"], "AWS::Lambda::Function").values() if len(

@@ -105,8 +105,8 @@ class VozStack(Stack):
             self, "Grabaciones", instance_arn=self.instancia.attr_arn, resource_type="CALL_RECORDINGS",
             storage_type="S3", s3_config=connect.CfnInstanceStorageConfig.S3ConfigProperty(
                 bucket_name=datos.bucket.bucket_name, bucket_prefix=f"{entorno.prefijo_s3}/connect/grabaciones"))
-        connect.CfnIntegrationAssociation(self, "LexEnConnect", instance_id=self.instancia.attr_arn,
-                                          integration_type="LEX_BOT", integration_arn=self.alias.attr_arn)
+        asociacion = connect.CfnIntegrationAssociation(self, "LexEnConnect", instance_id=self.instancia.attr_arn,
+                                                       integration_type="LEX_BOT", integration_arn=self.alias.attr_arn)
         horario = connect.CfnHoursOfOperation(
             self, "Horario", instance_arn=self.instancia.attr_arn, name="Policlínico de especialidades",
             time_zone="America/Santiago",
@@ -121,6 +121,7 @@ class VozStack(Stack):
         self.flujo = connect.CfnContactFlow(self, "FlujoEntrante", instance_arn=self.instancia.attr_arn,
                                             name="HLF entrante", type="CONTACT_FLOW", content=contenido,
                                             description="Consentimiento de grabación → asistente → persona (F0011)")
+        self.flujo.add_dependency(asociacion)        # Connect valida que el bot del flujo ya esté asociado
 
         if entorno.voz_reclamar_numero:
             numero = connect.CfnPhoneNumber(self, "Numero", target_arn=self.instancia.attr_arn,
