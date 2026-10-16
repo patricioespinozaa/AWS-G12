@@ -15,7 +15,7 @@ Detalle, dependencias y orden de implementación en [README.md](README.md).
 | [F0009](F0009-consulta-lenguaje-natural.md) | Consulta en lenguaje natural | Conteos exactos con SQL validado en Athena y resúmenes con la Knowledge Base (S3 Vectors) citando fuentes; todo registrado | Implementado | L |
 | [F0010](F0010-asistente-whatsapp.md) | Asistente por WhatsApp | Núcleo común a todos los canales, verificación de identidad y simulador en la app | Implementado | L |
 | [F0011](F0011-asistente-voz.md) | Asistente por voz | Amazon Connect + Lex + Polly, reutilizando el núcleo de F0010 | Implementado | M |
-| [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos | Subida segura a S3 y lectura con Textract y Bedrock citando el texto, siempre validada por una persona | Plan | M |
+| [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos | Subida segura a S3 y lectura con Textract y Bedrock citando el texto, siempre validada por una persona | Implementado | M |
 | [F0013](F0013-observabilidad-seguridad-costos.md) | Observabilidad, seguridad y costos | Alarmas, WAF, CloudTrail, presupuesto, respaldos, y una lista de verificación antes de usar datos reales | Plan | M |
 
 Tamaño: S (≤ ½ día), M (1 día), L (2 a 3 días).

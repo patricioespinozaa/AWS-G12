@@ -13,7 +13,7 @@ infra/
 │   ├── identidad.py       Cognito: User Pool de la Administradora, grupo administracion, Hosted UI (F0007)
 │   ├── ia.py              Bedrock: guardrail y política de invocación del modelo (F0008)
 │   ├── consulta.py        Knowledge Bases (equipo clínico y preguntas del paciente) en S3 Vectors (F0009, F0010)
-│   ├── asistente.py       KMS de teléfonos, secretos, tema SNS y Lambda de WhatsApp (F0010)
+│   ├── asistente.py       KMS de teléfonos y exámenes, secretos, WhatsApp (F0010) y escaneo de exámenes (F0012)
 │   ├── voz.py             Amazon Connect, bot de Lex V2 y Lambda de voz (F0011)
 ├── connect/flujo_entrante.json  flujo de contacto versionado
 │   ├── backend.py         ECS Fargate (imagen docker/backend), ALB interno
@@ -30,7 +30,7 @@ infra/
 | `Hlf<Entorno>-Identidad` | User Pool, grupo `administracion`, dominio del login | — |
 | `Hlf<Entorno>-Ia` | Guardrail de Bedrock (versión fija) y política IAM de invocación del modelo | — |
 | `Hlf<Entorno>-Consulta` | Bucket e índice de S3 Vectors, Knowledge Base (Titan V2), fuente de datos `kb/equipo/`, políticas de consulta (KB y Athena) y de preparación | Datos |
-| `Hlf<Entorno>-Asistente` | Clave KMS de teléfonos, pepper del HMAC y secreto de servicio (Secrets Manager), tema SNS de WhatsApp entrante y su Lambda | — |
+| `Hlf<Entorno>-Asistente` | Clave KMS de teléfonos, pepper del HMAC y secreto de servicio (Secrets Manager), tema SNS de WhatsApp entrante y su Lambda; clave KMS de exámenes y, con `examenes_guardduty`, GuardDuty Malware Protection sobre `canal/evidencias/`, regla de EventBridge y Lambda del resultado (F0012) | Datos |
 | `Hlf<Entorno>-Voz` | Instancia de Connect, horario, cola, flujo, bot de Lex `es_US` y su Lambda (solo con `voz=True`) | Asistente, Datos |
 | `Hlf<Entorno>-Backend` | Cluster ECS, tarea, servicio, ALB interno, logs; en demo, la tarea nocturna y su programación | Red, Datos |
 | `Hlf<Entorno>-Frontend` | Bucket web, CloudFront, función SPA, regla CloudFront → ALB, app client de Cognito y parámetro SSM `/hlf/<entorno>/cognito` | Red, Backend, Identidad |

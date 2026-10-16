@@ -10,6 +10,7 @@ from aws_cdk import aws_athena as athena
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_rds as rds
+from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
@@ -38,7 +39,16 @@ class DatosStack(Stack):
             ],
             removal_policy=RemovalPolicy.RETAIN if retener else RemovalPolicy.DESTROY,
             auto_delete_objects=not retener,
+            # F0012: el navegador sube el examen directo a S3 con un POST prefirmado (firma, tipo y tamaño acotados)
+            cors=[s3.CorsRule(allowed_methods=[s3.HttpMethods.POST], allowed_origins=["https://*"],
+                              allowed_headers=["*"], max_age=300)],
         )
+
+        # F0012: un archivo que GuardDuty marcó con amenaza no se puede descargar (ni para leerlo)
+        self.bucket.add_to_resource_policy(iam.PolicyStatement(
+            sid="SinDescargaDeArchivosConAmenaza", effect=iam.Effect.DENY, principals=[iam.AnyPrincipal()],
+            actions=["s3:GetObject", "s3:GetObjectVersion"], resources=[self.bucket.arn_for_objects("*")],
+            conditions={"StringEquals": {"s3:ExistingObjectTag/GuardDutyMalwareScanStatus": "THREATS_FOUND"}}))
 
         self.workgroup = athena.CfnWorkGroup(
             self, "WorkGroup",

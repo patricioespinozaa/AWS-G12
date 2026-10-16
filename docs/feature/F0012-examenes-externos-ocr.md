@@ -1,6 +1,6 @@
 # F0012 · Exámenes externos: subida a S3 y lectura asistida
 
-**Estado:** Plan · **Depende de:** F0005, F0010 · **Tamaño:** M
+**Estado:** Implementado · **Depende de:** F0005, F0010 · **Tamaño:** M
 
 ## Objetivo
 
@@ -75,3 +75,21 @@ infra/stacks/asistente.py        bucket o prefijo de evidencias, KMS, GuardDuty,
 
 - **Formatos de laboratorios privados** muy variados: medir la tasa de lectura correcta y mostrar siempre el documento junto a la propuesta.
 - **Unidades distintas** (mmol/L frente a mg/dL): convertir solo con una tabla explícita; si no se puede, dejar el campo para revisión.
+
+## Resultado
+
+Implementado y probado en local; el despliegue queda pendiente porque las credenciales de la cuenta del hackatón vencieron durante la implementación.
+
+| Pieza | Implementación |
+|---|---|
+| Migración | `db/sql/canal/003_lectura_examen.sql`: en `evidencia_externa`, tipo, valor y fecha pasan a ser opcionales mientras está pendiente (una restricción los exige al validar); nuevas columnas `escaneo_malware`, `estado_lectura` y `tamano_bytes`; un archivo infectado no se puede validar; `uri_archivo` única. Tabla `canal.lectura_examen` de solo inserción: campo, valor propuesto, cita, confianza, nota, modelo y versión del prompt |
+| Subida | `POST /api/canal/evidencias/subida` entrega un POST prefirmado de S3 (5 minutos, PDF/JPG/PNG, hasta 10 MB, SSE-KMS con la clave de exámenes, clave `canal/evidencias/<paciente>/…`). `/completar` revisa el objeto, calcula el sha256 en memoria y crea la evidencia `pendiente` sin valores. El archivo nunca pasa por el disco del contenedor |
+| WhatsApp | Una foto o PDF que llega por WhatsApp (F0010) se descarga con `GetWhatsAppMessageMedia` directo al mismo prefijo y sigue el mismo camino |
+| Escaneo | GuardDuty Malware Protection for S3 sobre `canal/evidencias/` (flag `examenes_guardduty`, demo). EventBridge → `lambda_escaneo.py` (sin VPC) → `/api/interno/examenes/escaneo`. Limpio: se lee. Amenaza: `bloqueada`, sin lectura ni descarga (la política del bucket niega `GetObject` a objetos con la etiqueta `THREATS_FOUND`) |
+| Lectura | `servicios/ocr_examenes/`: Textract (`AnalyzeDocument` con tablas, asíncrono para PDF de varias páginas) → Claude (Converse con herramienta, F0008) propone tipo, valor, unidad, fecha y lugar con su cita → `extraccion.validar` |
+| Validador | Toda cita debe aparecer literal en el texto; el valor debe estar en su cita como número suelto; la fecha, en su cita; el tipo debe nombrarse como palabra y ser uno de los 8 admitidos; la unidad, reconocida y en su cita. Solo se convierte con la tabla explícita (glicemia mmol/L ×18,016; HbA1c mmol/mol → %). Lo que no pasa queda vacío con su nota, nunca inventado |
+| Validación | La vista de validación muestra la propuesta, la cita y el enlace al documento (5 minutos); la Administradora confirma o corrige tipo, valor y fecha, y recién entonces la evidencia cuenta para la prioridad |
+
+**Pruebas** (`tests/test_ocr_examenes.py`): los 10 documentos sintéticos de `scripts/examenes_sinteticos.py` (PDF y foto; uno sin fecha y uno con un examen no admitido) se leen bien con un modelo correcto, y con un modelo que inventa no queda ningún valor sin cita literal; conversión de unidades solo con tabla (kPa queda para revisión); texto de Textract con tablas; flujo en PostgreSQL: evidencia pendiente sin valores con sha256, la propuesta no toca la evidencia ni la prioridad, validar sin valores falla, validar con valores la hace contar, la lectura no se puede editar, un archivo sin escaneo limpio no se lee y uno infectado no se valida. Infraestructura: clave KMS con rotación, CORS solo POST, sin descarga de amenazas, plan de GuardDuty sobre el prefijo y su regla de EventBridge.
+
+**Pendiente al desplegar:** `cdk deploy HlfDemo-Datos HlfDemo-Asistente HlfDemo-Backend`; medir la lectura real con `python scripts/examenes_sinteticos.py --evaluar --bucket <bucket>` (meta: 0 propuestas sin cita literal).

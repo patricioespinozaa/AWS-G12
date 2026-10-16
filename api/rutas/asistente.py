@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import os
 import threading
 from contextlib import contextmanager
@@ -22,6 +23,7 @@ from priorizacion import config
 
 from .. import estado as E
 
+log = logging.getLogger("hlf.asistente")
 router = APIRouter()
 router_interno = APIRouter()
 _nucleo = None
@@ -192,6 +194,14 @@ def entrada_whatsapp(e: EventoWhatsApp, x_hlf_servicio: str | None = Header(defa
         if not texto:
             continue
         s = nucleo().procesar(Entrada("whatsapp", whatsapp.clave_sesion(m.telefono), texto, telefono=m.telefono))
-        salidas.append({"cuerpo": whatsapp.mensaje_texto(m.telefono, s.texto).decode(), "nivel": s.nivel,
+        respuesta = s.texto
+        if m.id_media:                              # F0012: el examen va a S3 y a la lectura asistida
+            from .examenes import recibir_de_whatsapp
+            try:
+                respuesta = recibir_de_whatsapp(s.id_conversacion, m.id_media, m.tipo_mime)
+            except Exception as ex:  # noqa: BLE001
+                log.warning("No se pudo recibir el adjunto de WhatsApp: %s", type(ex).__name__)
+                respuesta = "No pudimos recibir el archivo. Intente de nuevo o llévelo a su próxima cita."
+        salidas.append({"cuerpo": whatsapp.mensaje_texto(m.telefono, respuesta).decode(), "nivel": s.nivel,
                         "derivacion": s.derivacion})
     return {"salidas": salidas}
