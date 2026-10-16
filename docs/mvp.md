@@ -67,6 +67,7 @@ flowchart LR
 | **Canal del paciente** (maqueta) | ¿Cómo entra la información que tiene el paciente? | Chat estilo WhatsApp para confirmar asistencia, enviar exámenes externos y responder un cuestionario de síntomas, junto a la bandeja de validación para TENS o enfermería |
 | **KPIs** | ¿Funciona la herramienta? | Tiempo a reevaluación, cobertura, concordancia (κ), foto frente a película, los pacientes que la lista congelada no ve, pacientes en alta por noche y equidad |
 | **Consolidación nocturna** | ¿Qué hace el proceso de cada noche? | Pasos con su servicio AWS, ejecución manual, bitácora de corridas y tabla de reglas y pesos vigentes |
+| **Reglas** (F0014) | ¿Con qué pesos y umbrales se propone la prioridad, y qué pasa si los cambio? | Todos los parámetros por grupo, editables y validados, simulación del efecto, guardar como versión con motivo e historial con restauración |
 
 Pestañas de la **ficha del paciente**:
 - **Evolución de la prioridad.** Tres gráficos sincronizados en el tiempo:
@@ -93,7 +94,7 @@ La **fecha de corte** de la barra superior funciona como máquina del tiempo: to
 
 ## Puntaje (reglas-v0.1)
 
-Todas las reglas están en `priorizacion/reglas.py` y se ven en la vista de consolidación nocturna.
+Los valores de fábrica están en `priorizacion/reglas.py`. La Administradora los cambia desde la vista **Reglas** (F0014): cada cambio es una versión `reglas-v0.1+c<n>` con su motivo, y queda en cada propuesta.
 
 - **Puntaje de nivel** = base de la prioridad inicial (alta 20, media 10, baja 0) + señales clínicas + ajuste por riesgo basal.
   - Las señales clínicas son los eventos con decaimiento (vida media de 90 días), las mediciones (desviación del rango, tendencia y persistencia) y los patrones combinados.

@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import config
-from .reglas import RANGOS_NORMALES, UNIDADES
+from . import reglas as R
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,10 +263,10 @@ class Repositorio:
             ev = evidencias[(evidencias["id_paciente"] == pid) & (evidencias["estado"] == "validada")] \
                 if len(evidencias) else evidencias
             for r in ev.itertuples(index=False):
-                lo, hi = RANGOS_NORMALES[r.tipo_medicion]
+                lo, hi = R.RANGOS_NORMALES[r.tipo_medicion]
                 f = date.fromisoformat(r.fecha_examen)
                 h.mediciones.setdefault(r.tipo_medicion, []).append(Medicion(
-                    f, r.tipo_medicion, float(r.valor), UNIDADES[r.tipo_medicion],
+                    f, r.tipo_medicion, float(r.valor), R.UNIDADES[r.tipo_medicion],
                     not (lo <= float(r.valor) <= hi), f"externa:{r.id_evidencia}", "externa"))
             al = mensajes[(mensajes["id_paciente"] == pid) & (mensajes["tipo"] == "sintoma_alarma")
                           & (mensajes["estado"] == "validada")] if len(mensajes) else mensajes

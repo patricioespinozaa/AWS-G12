@@ -16,7 +16,7 @@ from datetime import date, datetime
 import pandas as pd
 from fastapi import HTTPException
 
-from priorizacion import config
+from priorizacion import config, parametros
 from priorizacion.bandeja import construir_bandeja
 from priorizacion.consolidacion import consolidar, fecha_de_corte
 from priorizacion.datos import Repositorio
@@ -52,6 +52,7 @@ def iniciar() -> None:
     if config.usa_rds():
         _migrar()
     registro = crear_registro()
+    parametros.aplicar_vigente(registro)       # F0014: la versión de reglas que guardó la Administradora
     repo = Repositorio.crear()
     _ajustar_fecha_referencia(repo)
     repo.aplicar_registro(registro.evidencias(), registro.mensajes())
@@ -122,6 +123,11 @@ def consolidar_en_segundo_plano(origen: str, afectados=frozenset(), id_carga: in
 
 
 def _correr_consolidacion(origen, afectados, id_carga, recargar, desde_cero) -> None:
+    with parametros.lectura():                 # una simulación de reglas (F0014) espera a que termine
+        _consolidar_ahora(origen, afectados, id_carga, recargar, desde_cero)
+
+
+def _consolidar_ahora(origen, afectados, id_carga, recargar, desde_cero) -> None:
     try:
         if recargar:                       # los datos nuevos ya están en raw
             with escritura:
@@ -166,12 +172,20 @@ def sincronizar() -> None:
     if not config.usa_rds():
         return
     app, _, datos = registro.version().partition("-")
+    if app != _visto["app"]:                   # F0014: otra tarea pudo guardar una versión de las reglas
+        parametros.aplicar_vigente(registro)
     if datos != _visto["datos"]:
         with escritura:
             recargar_datos()
     elif app != _visto["app"]:
         repo.aplicar_registro(registro.evidencias(), registro.mensajes())
     _visto.update(app=app, datos=datos)
+
+
+def calculando():
+    """Dependencia de las rutas que calculan: mientras corren, una simulación de reglas espera (F0014)."""
+    with parametros.lectura():
+        yield
 
 
 # -- utilidades de las rutas --------------------------------------------------------------------------

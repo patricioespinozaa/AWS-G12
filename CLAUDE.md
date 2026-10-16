@@ -61,7 +61,7 @@ Leer `docs/contexto.md` y `docs/datos.md` antes de escribir código que toque da
 ## Estado
 
 Stack del MVP (detalle en `docs/mvp.md`):
-- `priorizacion/`: motor de dominio en Python (pandas). Las reglas y pesos están en `priorizacion/reglas.py`; todo cambio sube `VERSION_REGLAS`.
+- `priorizacion/`: motor de dominio en Python (pandas). Las reglas y sus valores de fábrica están en `priorizacion/reglas.py`; un cambio de fórmula en el código sube `VERSION_REGLAS`. Los parámetros los cambia la Administradora en la vista Reglas (F0014, `priorizacion/parametros.py`): cada cambio es una versión en `priorizacion.version_reglas` (solo inserción) y queda `reglas-v0.1+c<n>`. Por eso el motor lee siempre `R.X` al calcular, nunca `from .reglas import X`, y un parámetro nuevo de `reglas.py` debe agregarse al catálogo
 - `api/`: FastAPI. `main.py` solo arma la app; rutas por dominio en `api/rutas/`; estado compartido (repositorio, registro, caché) en `api/estado.py`, que las rutas leen como `E.repo` / `E.registro` (nunca copias: una carga lo reemplaza). `web/`: React + TypeScript + Vite + Recharts.
 - Dos modos (F0005), elegidos por variables de entorno:
   - **Local** (sin variables de base): lee los CSV de `HLF_DATA_DIR` y guarda en SQLite (`data/processed/priorizacion.sqlite`, ignorado por git). Respaldo de la demo.
