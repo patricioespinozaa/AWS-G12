@@ -12,6 +12,7 @@ infra/
 │   ├── datos.py           bucket de datos, workgroup de Athena, RDS opcional
 │   ├── identidad.py       Cognito: User Pool de la Administradora, grupo administracion, Hosted UI (F0007)
 │   ├── ia.py              Bedrock: guardrail y política de invocación del modelo (F0008)
+│   ├── consulta.py        Knowledge Base del equipo clínico en S3 Vectors y permisos de consulta (F0009)
 │   ├── backend.py         ECS Fargate (imagen docker/backend), ALB interno
 │   ├── nocturno.py        consolidación nocturna: EventBridge Scheduler → tarea ECS (solo con RDS)
 │   └── frontend.py        bucket web, CloudFront (S3 con OAC + /api/* por VPC origin), app client de Cognito
@@ -25,6 +26,7 @@ infra/
 | `Hlf<Entorno>-Datos` | Bucket de datos, workgroup `hlf-priorizacion-<entorno>`, RDS (solo demo) | Red |
 | `Hlf<Entorno>-Identidad` | User Pool, grupo `administracion`, dominio del login | — |
 | `Hlf<Entorno>-Ia` | Guardrail de Bedrock (versión fija) y política IAM de invocación del modelo | — |
+| `Hlf<Entorno>-Consulta` | Bucket e índice de S3 Vectors, Knowledge Base (Titan V2), fuente de datos `kb/equipo/`, políticas de consulta (KB y Athena) y de preparación | Datos |
 | `Hlf<Entorno>-Backend` | Cluster ECS, tarea, servicio, ALB interno, logs; en demo, la tarea nocturna y su programación | Red, Datos |
 | `Hlf<Entorno>-Frontend` | Bucket web, CloudFront, función SPA, regla CloudFront → ALB, app client de Cognito y parámetro SSM `/hlf/<entorno>/cognito` | Red, Backend, Identidad |
 
@@ -89,6 +91,7 @@ El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o 
 | Reiniciar el backend | `aws ecs update-service --cluster <SalidaCluster> --service <SalidaServicio> --force-new-deployment` |
 | Sumar los datos de un periodo nuevo | Vista **Cargas** de la app (subir, vista previa, confirmar). Desde la línea de comandos, como tarea ECS: `python -m db cargar --incremental --periodo DESDE:HASTA --datos <carpeta> --confirmar` |
 | Dejar una exportación para la consolidación nocturna (F0006) | `aws s3 cp <carpeta> s3://<bucket>/hlf/entrada/<AAAA-MM-DD>/ --recursive` (CSV y `periodo.json` opcional). A las 02:00 (Santiago) se suma a `raw` y se consolida; queda en Cargas como versión nueva, o `fallida` con archivo y línea |
+| Sincronizar la Knowledge Base (F0009) | Botón "Sincronizar" de la vista Consulta, o `aws ecs run-task` con `<SalidaTareaNocturna>` y el comando `python -m servicios.preparacion_kb`. La noche lo hace sola cuando entran datos nuevos |
 | Correr la consolidación nocturna ahora | `aws ecs run-task` con `<SalidaTareaNocturna>`, las subredes y el SG de las salidas (`--launch-type FARGATE`) |
 | Reconstruir `raw` desde la historia completa | `python -m db restaurar` como tarea ECS (borra lo que no venga en los CSV publicados: solo para reconstruir) |
 | Probar los templates | `cd infra && python -m pytest tests -q` |
