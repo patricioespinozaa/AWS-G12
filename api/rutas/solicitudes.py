@@ -99,8 +99,10 @@ def clinico(id_solicitud: str, corte: str | None = None):
 def explicacion_ia(id_solicitud: str, corte: str | None = None):
     c = E.fecha(corte)
     sol = E.solicitud(id_solicitud)
-    r = evaluar(sol, E.repo.historias[sol.id_paciente], c, E.decisiones(id_solicitud))
-    return a_json(explicacion_llm(r))
+    hist, decs = E.repo.historias[sol.id_paciente], E.decisiones(id_solicitud)
+    r = evaluar(sol, hist, c, decs)
+    # La huella identifica los datos usados: la misma propuesta no vuelve a llamar a Bedrock (caché en la base)
+    return a_json(explicacion_llm(r, huella_datos(sol, hist, c, decs), E.registro))
 
 
 class DecisionIn(BaseModel):

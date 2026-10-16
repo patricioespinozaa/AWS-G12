@@ -11,6 +11,7 @@ infra/
 │   ├── red.py             VPC 2 AZ y security groups (ALB → backend → RDS)
 │   ├── datos.py           bucket de datos, workgroup de Athena, RDS opcional
 │   ├── identidad.py       Cognito: User Pool de la Administradora, grupo administracion, Hosted UI (F0007)
+│   ├── ia.py              Bedrock: guardrail y política de invocación del modelo (F0008)
 │   ├── backend.py         ECS Fargate (imagen docker/backend), ALB interno
 │   ├── nocturno.py        consolidación nocturna: EventBridge Scheduler → tarea ECS (solo con RDS)
 │   └── frontend.py        bucket web, CloudFront (S3 con OAC + /api/* por VPC origin), app client de Cognito
@@ -23,6 +24,7 @@ infra/
 | `Hlf<Entorno>-Red` | VPC, subredes, endpoint S3, security groups | — |
 | `Hlf<Entorno>-Datos` | Bucket de datos, workgroup `hlf-priorizacion-<entorno>`, RDS (solo demo) | Red |
 | `Hlf<Entorno>-Identidad` | User Pool, grupo `administracion`, dominio del login | — |
+| `Hlf<Entorno>-Ia` | Guardrail de Bedrock (versión fija) y política IAM de invocación del modelo | — |
 | `Hlf<Entorno>-Backend` | Cluster ECS, tarea, servicio, ALB interno, logs; en demo, la tarea nocturna y su programación | Red, Datos |
 | `Hlf<Entorno>-Frontend` | Bucket web, CloudFront, función SPA, regla CloudFront → ALB, app client de Cognito y parámetro SSM `/hlf/<entorno>/cognito` | Red, Backend, Identidad |
 

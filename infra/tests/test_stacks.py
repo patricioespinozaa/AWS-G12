@@ -207,3 +207,31 @@ def test_login_de_la_administradora(plantillas):
     assert variables["HLF_COGNITO_PARAMETRO"] == f"/hlf/{entorno}/cognito"
     assert "ssm:GetParameter" in json.dumps(t["backend"].find_resources("AWS::IAM::Policy"))
 
+
+
+def test_ia_solo_bedrock_con_guardrail_y_minimo_privilegio(plantillas):
+    """F0008: guardrail en español (nivel Standard), temas denegados solo en la salida, e invocación solo del perfil
+    elegido. En dev (sin IA) la tarea no recibe permisos de Bedrock."""
+    entorno, t = plantillas
+    (guardrail,) = _recursos(t["ia"], "AWS::Bedrock::Guardrail").values()
+    g = guardrail["Properties"]
+    assert g["ContentPolicyConfig"]["ContentFiltersTierConfig"]["TierName"] == "STANDARD"
+    assert g["TopicPolicyConfig"]["TopicsTierConfig"]["TierName"] == "STANDARD"
+    assert all(tp["InputEnabled"] is False and tp["OutputEnabled"] is True and tp["Type"] == "DENY"
+               for tp in g["TopicPolicyConfig"]["TopicsConfig"])
+    assert _recursos(t["ia"], "AWS::Bedrock::GuardrailVersion")
+    politicas = json.dumps(t["ia"].find_resources("AWS::IAM::ManagedPolicy"))
+    assert '"bedrock:*"' not in politicas and '"Resource": "*"' not in politicas
+    tarea = next(x for x in _recursos(t["backend"], "AWS::ECS::TaskDefinition").values()
+                 if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
+    variables = {v["Name"]: v.get("Value") for v in tarea["Properties"]["ContainerDefinitions"][0]["Environment"]}
+    roles = json.dumps(t["backend"].find_resources("AWS::IAM::Role"))
+    if entorno == "demo":
+        assert variables["LLM_PROVEEDOR"] == "bedrock"
+        assert variables["BEDROCK_MODEL_ID"].startswith("us.anthropic.")
+        assert {"BEDROCK_GUARDRAIL_ID", "BEDROCK_GUARDRAIL_VERSION"} <= set(variables)
+        assert "inference-profile/us.anthropic" in politicas and "bedrock:InvokeModel" in politicas
+        assert "PoliticaInvocacion" in roles or "ImportValue" in roles
+    else:
+        assert variables["LLM_PROVEEDOR"] == "" and "BEDROCK_GUARDRAIL_ID" not in variables
+        assert "PoliticaInvocacion" not in roles and "HlfDev-Ia" not in roles

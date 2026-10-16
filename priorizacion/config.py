@@ -20,7 +20,13 @@ FECHA_REFERENCIA = FECHA_REFERENCIA_BASE
 # IA generativa (opcional). Sin estas variables, las explicaciones usan la plantilla determinista.
 LLM_PROVEEDOR = os.environ.get("LLM_PROVEEDOR", "").lower()          # "bedrock" para activar
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-opus-5-5")
+# Solo modelos de Amazon Bedrock (F0008). Perfil de inferencia "us." permitido en la cuenta del hackatón; elegido en la
+# prueba de humo (scripts/prueba_bedrock.py). Alternativa más rápida y barata: us.amazon.nova-pro-v1:0
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+BEDROCK_REGION = os.environ.get("BEDROCK_REGION") or AWS_REGION
+BEDROCK_MAX_TOKENS = int(os.environ.get("BEDROCK_MAX_TOKENS", "900"))       # 3 a 5 oraciones, con holgura
+BEDROCK_GUARDRAIL_ID = os.environ.get("BEDROCK_GUARDRAIL_ID", "")
+BEDROCK_GUARDRAIL_VERSION = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
 
 # Base de datos (F0005). Con HLF_DATABASE_URL o HLF_DB_SECRET_ID (+ HLF_DB_HOST) la app lee raw de RDS y guarda
 # en los esquemas priorizacion y canal. Sin ellas, modo local: CSV + SQLite (respaldo de la demo).
