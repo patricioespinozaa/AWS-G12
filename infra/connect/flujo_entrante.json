@@ -1,7 +1,6 @@
 {
   "Version": "2019-10-30",
   "StartAction": "bienvenida",
-  "Metadata": {"name": "HLF asistente del paciente", "description": "F0011: consentimiento de grabación, asistente con Lex y transferencia a una persona"},
   "Actions": [
     {
       "Identifier": "bienvenida",
@@ -52,7 +51,7 @@
         "LexV2Bot": {"AliasArn": "${LexAliasArn}"},
         "LexSessionAttributes": {"telefono": "$.CustomerEndpoint.Address", "contactId": "$.ContactId", "grabacion": "$.Attributes.grabacion"}
       },
-      "Transitions": {"NextAction": "decidir", "Errors": [{"NextAction": "preparar_transferencia", "ErrorType": "NoMatchingError"}]}
+      "Transitions": {"NextAction": "decidir", "Errors": [{"NextAction": "decidir", "ErrorType": "NoMatchingCondition"}, {"NextAction": "preparar_transferencia", "ErrorType": "NoMatchingError"}]}
     },
     {
       "Identifier": "decidir",
