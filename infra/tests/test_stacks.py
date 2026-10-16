@@ -162,3 +162,24 @@ def test_etiquetas_en_todos_los_stacks(plantillas):
     bucket = list(_recursos(t["datos"], "AWS::S3::Bucket").values())[0]
     etiquetas = {e["Key"]: e["Value"] for e in bucket["Properties"]["Tags"]}
     assert etiquetas.get("proyecto") == "hlf-priorizacion" and etiquetas.get("entorno") == entorno
+
+
+def test_consolidacion_nocturna_solo_con_rds(plantillas):
+    entorno, t = plantillas
+    programaciones = _recursos(t["backend"], "AWS::Scheduler::Schedule")
+    if entorno == "dev":
+        assert programaciones == {}                       # sin base no hay histórico que consolidar
+        return
+    (prog,) = programaciones.values()
+    p = prog["Properties"]
+    assert p["ScheduleExpression"] == "cron(0 2 * * ? *)" and p["ScheduleExpressionTimezone"] == "America/Santiago"
+    assert p["Target"]["EcsParameters"]["LaunchType"] == "FARGATE"
+    tareas = _recursos(t["backend"], "AWS::ECS::TaskDefinition").values()
+    nocturna = next(x["Properties"]["ContainerDefinitions"][0] for x in tareas
+                    if x["Properties"]["ContainerDefinitions"][0].get("Command"))
+    assert nocturna["Command"] == ["python", "-m", "servicios.nocturno"]
+    variables = {v["Name"]: v["Value"] for v in nocturna["Environment"] if isinstance(v.get("Value"), str)}
+    assert variables["HLF_AUTOCONFIRMAR"] == "1" and "HLF_DB_SECRET_ID" in {v["Name"] for v in nocturna["Environment"]}
+    politicas = json.dumps(t["backend"].find_resources("AWS::IAM::Policy"))
+    assert "/hlf/parquet/*" in politicas and "/hlf/historial/*" in politicas
+    assert "ecs:RunTask" in politicas and "iam:PassRole" in politicas

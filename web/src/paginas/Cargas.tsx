@@ -27,7 +27,7 @@ function aBase64(f: File): Promise<string> {
 }
 
 export default function Cargas() {
-  const { meta, refrescar, recargarMeta, version } = useApp();
+  const { meta, refrescar, seguirConsolidacion, version } = useApp();
   if (meta && meta.base_de_datos !== "rds") {
     return (
       <div className="tarjeta pila">
@@ -41,7 +41,7 @@ export default function Cargas() {
   }
   return (
     <div className="pila">
-      <Subida onAplicada={() => { refrescar(); recargarMeta(); }} />
+      <Subida onAplicada={() => { refrescar(); seguirConsolidacion(); }} />
       <Historial version={version} />
     </div>
   );
@@ -117,8 +117,9 @@ function Subida({ onAplicada }: { onAplicada: () => void }) {
       {error && <Aviso tipo="error">{error}</Aviso>}
       {resultado && (
         <Aviso tipo="exito">
-          Versión <b>{String(resultado.version)}</b> aplicada: {String(resultado.solicitudes_recalculadas)} solicitudes
-          recalculadas y {String(resultado.propuestas_nuevas)} propuestas para revisar. <Link to="/bandeja">Ir a la bandeja →</Link>
+          Versión <b>{String(resultado.version)}</b> aplicada ({(resultado.pacientes_afectados as string[]).length} pacientes
+          con datos nuevos). Las prioridades se están recalculando en segundo plano: el aviso de arriba indica cuándo
+          termina. <Link to="/bandeja">Ir a la bandeja →</Link>
         </Aviso>
       )}
       {previa && (

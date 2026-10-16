@@ -351,8 +351,7 @@ erDiagram
     reloj {
         smallint id PK
         text modo
-        date fecha_demo
-        smallint dias_por_tick
+        date fecha_manual
         timestamptz actualizado_en
         text actualizado_por FK
     }
@@ -489,13 +488,12 @@ Fecha de corte vigente (real o simulada para la demo). Una sola fila.
 | Columna | Tipo | Nulo | Llave | Descripción |
 |---|---|---|---|---|
 | id | smallint | no | PK | Siempre 1: la tabla tiene una sola fila. Por defecto: `1` |
-| modo | text | no |  | `real` = hoy; `demo` = fecha simulada. Valores: `real`, `demo` |
-| fecha_demo | date | sí |  | Fecha simulada; obligatoria en modo demo |
-| dias_por_tick | smallint | no |  | Días que avanza cada tick de la demo. Regla: > 0. Por defecto: `1` |
+| modo | text | no |  | `datos` = fecha de la última versión aplicada; `manual` = fecha fija para ensayos (F0006). Valores: `datos`, `manual` |
+| fecha_manual | date | sí |  | Fecha fija; obligatoria en modo manual |
 | actualizado_en | timestamp with time zone | no |  | Último cambio. Por defecto: `now()` |
 | actualizado_por | text | no | FK | Quién lo cambió (`sistema` si fue la Lambda) → `priorizacion.usuario` |
 
-**Reglas:** Una sola fila (`id` = 1); Modo `demo` exige `fecha_demo`; Se lee con `priorizacion.fecha_corte()` y se avanza con `priorizacion.avanzar_reloj(dias)`.
+**Reglas:** Una sola fila (`id` = 1); Modo `manual` exige `fecha_manual`; Se lee con `priorizacion.fecha_corte()`. Desde F0006 no avanza sola: la fecha la fijan los datos.
 
 #### `priorizacion.corrida_nocturna`
 
@@ -1148,7 +1146,7 @@ Asistente, verificación reforzada: eventos, mediciones y exámenes externos val
 | "¿Tengo hora? ¿Cuándo fue mi última cita?" | `v_ia_citas` | básica | Citas próximas (`cita_agendada`) y pasadas (`cita_agendada` y `raw.citaciones`) |
 | "¿Qué exámenes o registros tienen de mí?" | `v_ia_registros` | reforzada | Eventos, mediciones y exámenes externos validados. Los marcados `sensible` (hospitalización, evento grave, PHQ-9) no se leen en voz alta: se ofrece derivar a una persona |
 
-**Fecha de corte:** las tres vistas usan `priorizacion.fecha_corte()`. Con el reloj en modo demo no informan nada posterior a esa fecha. Una cita histórica posterior al corte aparece como próxima y `programada`, porque a esa fecha su resultado aún no se conoce.
+**Fecha de corte:** las tres vistas usan `priorizacion.fecha_corte()`. No informan nada posterior a esa fecha (la de los datos, o la fijada en modo manual). Una cita histórica posterior al corte aparece como próxima y `programada`, porque a esa fecha su resultado aún no se conoce.
 
 **Cómo se filtra por paciente:** después de verificar la identidad, el backend del asistente ejecuta `SET LOCAL canal.id_conversacion = '<id>'` en cada transacción. La función `canal.paciente_verificado(nivel)` devuelve el paciente solo si esa conversación está **en curso** y verificada al nivel que se pide. Sin eso, las vistas no devuelven filas. Un error de lógica del bot no puede mezclar datos de dos pacientes, y no se puede leer nada sin una verificación registrada.
 

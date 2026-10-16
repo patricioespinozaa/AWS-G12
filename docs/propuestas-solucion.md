@@ -83,7 +83,7 @@ Son tres piezas que se pueden construir por separado y que se potencian juntas.
 
 **Qué hace:**
 1. **Consolidación nocturna.** Las notas dicen que no se puede cambiar que cada sistema guarde la información por separado. Entonces **no se toca el origen**: cada noche un proceso lee las fuentes (lista de espera, RCE, urgencias, farmacia, egresos) y arma una **ficha consolidada por paciente** en una base aparte, de solo lectura.
-   - Con una corrida diaria, un evento se procesa en **menos de 24 h**, lo que cumple holgadamente el KPI de 72 h.
+   - Con una corrida diaria, un evento se procesa en **menos de 24 h**, lo que cumple holgadamente el KPI de 72 h. Eso requiere que la exportación llegue a diario: en el prototipo (F0006) la corrida toma lo que haya en el buzón de S3; si se carga a mano, el plazo depende de cada cuánto se cargue.
    - Si más adelante se puede, sumar disparadores en tiempo real para urgencias y hospitalizaciones.
 2. **Organización por tipo.** Cada dato se clasifica como `diagnóstico`, `examen`, `fármaco`, `atención` (urgencia, hospitalización, consulta), `procedimiento` o `indicación de control`. El texto libre pasa por extracción (NER en español o un LLM con cita del fragmento).
 3. **Resumen clínico consolidado.** Una línea de tiempo por paciente, más un resumen de 3 a 5 líneas generado por LLM y anclado a la evidencia. Por ejemplo: *"68 años, DM2 desde 2015. 2 urgencias por hiperglicemia (ago y sep 2026), 1 hospitalización (sep 2026). Inició insulina en sep 2026. En espera de oftalmología por baja de visión hace 140 días."*
@@ -162,7 +162,7 @@ Las notas plantean que hoy, para actualizar su ficha, el paciente tiene que **ag
 Fuentes HLF (CSV/Excel anonimizados)
    │  S3 (raw)
    ▼
-Proceso nocturno ── AWS Glue o Lambda + EventBridge (cron diario)
+Proceso nocturno ── EventBridge Scheduler (02:00 Santiago) → tarea ECS Fargate (implementado en F0006)
    │  normaliza CIE-10, une por ID, clasifica por tipo
    ▼
 Ficha consolidada ── S3 (procesado) / RDS o DynamoDB

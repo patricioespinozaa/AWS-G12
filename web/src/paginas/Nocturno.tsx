@@ -4,40 +4,45 @@ import { Aviso, Cargando, Metrica, Tabla } from "../componentes/comunes";
 import { useApp } from "../contexto";
 
 const PASOS = [
-  { t: "Ingesta", d: "Lee lista de espera, eventos, mediciones, citas y agenda. No modifica las fuentes.", aws: "S3 raw · Glue / Lambda" },
-  { t: "Consolidación por paciente", d: "Une todo por id_paciente y lo organiza por tipo: diagnósticos, atenciones, fármacos, exámenes.", aws: "Glue job · S3 procesado (Parquet por fecha)" },
-  { t: "Corte a la noche", d: "Para cada noche usa solo datos con fecha ≤ esa noche. Excluye fallecidos y atendidos.", aws: "Partición fecha_corte=AAAA-MM-DD" },
-  { t: "Motor de reglas", d: "Regla dura → puntaje de nivel → nivel → resguardo sin evidencia de mejora. Determinista y versionado.", aws: "Lambda (Python)" },
-  { t: "Propuesta y explicación", d: "Si cambia el nivel o se enciende una alerta, registra la propuesta con factores, fuentes y huella.", aws: "RDS / DynamoDB · Bedrock solo para redactar" },
-  { t: "Bandeja del equipo clínico", d: "A la mañana, el equipo ve los cambios de la noche y acepta, ajusta o rechaza.", aws: "API Gateway + app web" },
+  { t: "Entrada", d: "Una exportación nueva: la sube la Administradora en Cargas o llega sola al buzón y la recoge el proceso de las 02:00.", aws: "S3 hlf/entrada/ · EventBridge Scheduler → ECS" },
+  { t: "Suma a raw", d: "Se valida y se suma a lo que ya existe como una versión nueva. Nada se borra; cada cambio queda en el historial.", aws: "RDS · raw.carga_lote" },
+  { t: "Simulación histórica", d: "Los pacientes con datos nuevos se recalculan desde su ingreso; los demás solo suman las noches nuevas. Cada noche usa solo lo conocido hasta esa noche.", aws: "ECS (Python) · serie nocturna" },
+  { t: "Posiciones y propuestas", d: "Se recalculan las posiciones de las noches tocadas y se registran las propuestas cuando cambia el nivel o se enciende una alerta.", aws: "RDS · priorizacion" },
+  { t: "Estimación de espera", d: "Rango de días según la posición vigente y las atenciones de las últimas 8 semanas. Uso interno.", aws: "RDS · estimacion_espera" },
+  { t: "Bitácora y publicación", d: "La corrida queda registrada con su origen. Opcionalmente se publica en Athena para análisis.", aws: "S3 Parquet · Athena" },
 ];
 
+const ORIGEN: Record<string, string> = {
+  completo: "Historia completa", carga: "Carga confirmada", nocturno: "Consolidación nocturna", solicitud: "Puntual",
+};
+
 export default function Nocturno() {
-  const { version, refrescar } = useApp();
+  const { version, consolidacion, seguirConsolidacion } = useApp();
   const { data, error } = useApi<Registro>("/api/nocturno", version);
-  const [corriendo, setCorriendo] = useState(false);
-  const [resultado, setResultado] = useState<Registro | null>(null);
   const [fallo, setFallo] = useState<string | null>(null);
+  const [pedido, setPedido] = useState(false);
+  const enCurso = !!consolidacion?.en_curso;
   const ejecutar = async () => {
-    setCorriendo(true);
     setFallo(null);
+    setPedido(true);
     try {
-      setResultado(await postJSON<Registro>("/api/nocturno/ejecutar"));
-      refrescar();
+      await postJSON<Registro>("/api/nocturno/ejecutar");
+      seguirConsolidacion();
     } catch (e) {
       setFallo((e as Error).message);
     } finally {
-      setCorriendo(false);
+      setPedido(false);
     }
   };
+  const ultimo = consolidacion && !consolidacion.en_curso ? consolidacion.resultado : null;
   return (
     <>
       <div className="encabezado">
         <h1>🌙 Consolidación nocturna</h1>
         <p>
-          Las fuentes siguen guardando su información por separado. Cada noche un proceso las lee, arma la ficha
-          consolidada y recalcula la prioridad de toda la lista. Para probar con el dataset se re-procesa la historia
-          completa, noche a noche, como si el proceso hubiera corrido todos los días.
+          Cada vez que llegan datos nuevos (una carga confirmada o una exportación en el buzón), el mismo proceso los
+          suma al histórico y deja al día la simulación noche a noche, las propuestas y la estimación de espera. Si el
+          HLF puede dejar sus exportaciones en el buzón, la carga manual deja de ser necesaria.
         </p>
       </div>
       <div className="tarjeta"><div className="pasos">
@@ -48,13 +53,17 @@ export default function Nocturno() {
         <>
           <div className="tarjeta pila">
             <div className="fila entre">
-              <h3>Ejecutar ahora</h3>
-              <button className="boton primario" onClick={ejecutar} disabled={corriendo}>
-                {corriendo ? "Re-procesando la historia completa…" : "▶ Re-procesar la historia completa"}
+              <h3>Recalcular la historia completa</h3>
+              <button className="boton primario" onClick={ejecutar} disabled={enCurso || pedido}>
+                {enCurso ? "Recalculando…" : "▶ Recalcular desde cero"}
               </button>
             </div>
-            <small>Recalcula todas las noches con las reglas <code>{data.version_reglas}</code>, las decisiones clínicas y la evidencia validada. Toma unos segundos.</small>
-            {resultado && <Aviso tipo="exito">Listo: {resultado.n_evaluaciones.toLocaleString("es-CL")} evaluaciones y {resultado.n_propuestas} propuestas en {resultado.segundos} s.</Aviso>}
+            <small>
+              Rehace todas las noches con las reglas <code>{data.version_reglas}</code>, las decisiones clínicas y la
+              evidencia validada, hasta los datos al <b>{data.fecha_corte}</b>. Solo hace falta tras cambiar las reglas: las
+              cargas nuevas se consolidan solas. Corre en segundo plano.
+            </small>
+            {ultimo && <Aviso tipo="exito">Último recálculo ({ORIGEN[consolidacion!.origen ?? ""] ?? consolidacion!.origen}): {Number(ultimo.evaluaciones).toLocaleString("es-CL")} evaluaciones, {String(ultimo.propuestas)} propuestas y {String(ultimo.estimaciones)} estimaciones en {String(ultimo.segundos)} s.</Aviso>}
             {fallo && <Aviso tipo="error">{fallo}</Aviso>}
           </div>
           <div className="metricas">
@@ -67,11 +76,11 @@ export default function Nocturno() {
           </div>
           <div className="tarjeta pila">
             <h3>Bitácora de corridas</h3>
-            <Tabla filas={data.corridas} columnas={[
-              { clave: "id_corrida", titulo: "#", num: true }, { clave: "inicio", titulo: "Inicio" }, { clave: "alcance", titulo: "Alcance" },
-              { clave: "desde", titulo: "Desde" }, { clave: "hasta", titulo: "Hasta" }, { clave: "version_reglas", titulo: "Reglas" },
-              { clave: "n_evaluaciones", titulo: "Evaluaciones", num: true }, { clave: "n_propuestas", titulo: "Propuestas", num: true },
-              { clave: "segundos", titulo: "Segundos", num: true },
+            <Tabla filas={(data.corridas as Registro[]).map((c) => ({ ...c, origen: ORIGEN[c.origen] ?? c.origen }))} columnas={[
+              { clave: "id_corrida", titulo: "#", num: true }, { clave: "inicio", titulo: "Inicio" }, { clave: "origen", titulo: "Origen" },
+              { clave: "estado", titulo: "Estado" }, { clave: "alcance", titulo: "Alcance" }, { clave: "hasta", titulo: "Datos al" },
+              { clave: "version_reglas", titulo: "Reglas" }, { clave: "n_evaluaciones", titulo: "Evaluaciones", num: true },
+              { clave: "n_propuestas", titulo: "Propuestas", num: true }, { clave: "segundos", titulo: "Segundos", num: true },
             ]} />
           </div>
           <div className="tarjeta pila">

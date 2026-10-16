@@ -113,6 +113,7 @@ textarea { width: 100%; min-height: 70px; resize: vertical; }
 .aviso.atencion { background: var(--media-suave); border-color: #f0d29d; color: #7e5108; }
 .aviso.info { background: var(--baja-suave); border-color: #b7d3ea; color: #1b4f75; }
 .aviso.exito { background: var(--exito-suave); border-color: #a9dcbc; color: #165c34; }
+.aviso.recalculo { margin: 10px 24px 0; }
 
 .pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); flex-wrap: wrap; }
 .pestanas button { border: none; background: none; padding: 9px 14px; font: inherit; cursor: pointer; color: var(--texto-suave); border-bottom: 2px solid transparent; margin-bottom: -1px; }
@@ -181,4 +182,5 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .principio { display: none; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .contenido, .barra { padding-left: 16px; padding-right: 16px; }
+  .aviso.recalculo { margin: 10px 16px 0; }
 }
