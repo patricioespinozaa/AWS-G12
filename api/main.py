@@ -10,6 +10,8 @@ Las rutas están separadas por dominio en api/rutas/; el estado compartido, en a
 """
 from __future__ import annotations
 
+import logging
+import sys
 import threading
 
 from fastapi import Depends, FastAPI, Request
@@ -23,6 +25,19 @@ from . import estado as E
 from . import seguridad
 from .rutas import agenda, bandeja, canal, cargas, kpis, meta, nocturno, publico, solicitudes
 
+
+def _configurar_logs() -> None:
+    """Los loggers de la app (hlf.*) a stdout en INFO: en AWS llegan a CloudWatch Logs. Uvicorn solo configura los
+    suyos; sin esto, los INFO de la app (p. ej. el registro de cada llamada a Bedrock, F0008) se descartan."""
+    raiz = logging.getLogger("hlf")
+    if not raiz.handlers:
+        h = logging.StreamHandler(sys.stdout)
+        h.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+        raiz.addHandler(h)
+        raiz.setLevel(logging.INFO)
+
+
+_configurar_logs()
 seguridad.validar_arranque()
 E.iniciar()
 

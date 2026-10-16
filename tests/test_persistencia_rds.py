@@ -167,3 +167,14 @@ def test_decision_con_ajuste_de_puntaje_igual_que_sqlite(pg, sqlite, repo):
     assert d_pg["puntaje_calculado"].tolist() == d_sq["puntaje_calculado"].tolist() == [r.puntaje, r.puntaje]
     assert pg.decisiones_por_solicitud()["IC-HLF-00002"] == sqlite.decisiones_por_solicitud()["IC-HLF-00002"]
     assert [d.ajuste_puntaje for d in pg.decisiones_por_solicitud()["IC-HLF-00002"]] == [4.5, None]
+
+
+def test_cache_de_explicaciones_igual_que_sqlite(pg, sqlite):
+    """F0008: un texto aceptado se guarda por huella, modelo y versión del prompt; repetir no falla."""
+    for registro in (pg, sqlite):
+        assert registro.explicacion_guardada("h1", "us.anthropic.x", "p1") is None
+        registro.guardar_explicacion("h1", "us.anthropic.x", "p1", "IC-HLF-00002", "Texto validado.")
+        registro.guardar_explicacion("h1", "us.anthropic.x", "p1", "IC-HLF-00002", "Otro texto.")   # no reemplaza
+        assert registro.explicacion_guardada("h1", "us.anthropic.x", "p1") == "Texto validado."
+        assert registro.explicacion_guardada("h1", "us.amazon.y", "p1") is None                       # otro modelo
+        assert registro.explicacion_guardada("h1", "us.anthropic.x", "p2") is None                    # otro prompt

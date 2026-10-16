@@ -24,7 +24,7 @@ La primera vez, la API corre la consolidación nocturna sobre toda la historia (
 | Consolidación con buzón (F0006) | `python -m servicios.nocturno --buzon data/buzon` |
 | Recalcular la historia completa | `python -m priorizacion.nocturno` |
 | Documentación interactiva de la API | http://127.0.0.1:8000/docs |
-| Activar explicaciones con IA generativa | `pip install "anthropic[bedrock]"` y variables `LLM_PROVEEDOR=bedrock`, `AWS_REGION`, `BEDROCK_MODEL_ID` (por defecto `anthropic.claude-opus-5-5`), con credenciales AWS |
+| Activar explicaciones con IA generativa (solo Amazon Bedrock, F0008) | Variables `LLM_PROVEEDOR=bedrock` y `AWS_REGION`, con credenciales AWS. Modelo: `BEDROCK_MODEL_ID` (por defecto, Claude Sonnet 4.5 por el perfil `us.`). Opcional: `BEDROCK_GUARDRAIL_ID` y `BEDROCK_GUARDRAIL_VERSION`. Prueba de humo: `python scripts/prueba_bedrock.py` |
 
 ## Arquitectura
 
@@ -157,5 +157,5 @@ El MVP corre local; cada pieza tiene un equivalente directo en AWS.
 - No hay priorización experta: el κ solo se calcula con las decisiones que se registren en la app.
 - Sin texto libre: no se pueden medir los controles visibles ni probar la extracción con LLM sobre notas reales.
 - La agenda usa los cupos libres registrados; `citaciones` y `agenda_box` casi no cruzan (`docs/datos.md`).
-- La explicación con Bedrock está implementada pero no se probó contra el servicio (faltan credenciales en este entorno). Sin ellas, la app usa la plantilla.
+- La explicación con IA usa Amazon Bedrock (F0008), probada contra el servicio y desplegada en `demo`. Sin credenciales o con `LLM_PROVEEDOR` vacío, la app usa la plantilla.
 - Autenticación (F0007): en AWS solo entra la Administradora, con login de Cognito. En modo local corre sin login y lo avisa en la barra lateral.

@@ -22,6 +22,7 @@ from constructs import Construct
 from config.entornos import Entorno
 
 from .datos import DatosStack
+from .ia import IaStack
 from .nocturno import ConsolidacionNocturna
 from .red import RedStack
 
@@ -34,7 +35,7 @@ GRACIA_ARRANQUE = Duration.minutes(6)
 
 class BackendStack(Stack):
     def __init__(self, scope: Construct, id: str, *, entorno: Entorno, red: RedStack, datos: DatosStack,
-                 **kwargs) -> None:
+                 ia: IaStack | None = None, **kwargs) -> None:
         super().__init__(scope, id, description="HLF priorización: backend (ECS Fargate + ALB interno)", **kwargs)
 
         cluster = ecs.Cluster(self, "Cluster", vpc=red.vpc, container_insights_v2=ecs.ContainerInsights.ENABLED)
@@ -67,6 +68,10 @@ class BackendStack(Stack):
         }
         if entorno.bedrock_model_id:
             variables["BEDROCK_MODEL_ID"] = entorno.bedrock_model_id
+        if entorno.llm_proveedor == "bedrock" and ia is not None:
+            # Explicaciones con IA (F0008): solo Bedrock, con el guardrail en una versión fija
+            variables.update(BEDROCK_GUARDRAIL_ID=ia.guardrail.attr_guardrail_id,
+                             BEDROCK_GUARDRAIL_VERSION=ia.version.attr_version)
         if datos.rds is not None:
             # db/conexion.py arma la conexión con el secreto de Secrets Manager; la clave nunca va en variables
             variables.update(HLF_DB_HOST=datos.rds.db_instance_endpoint_address,
@@ -84,6 +89,8 @@ class BackendStack(Stack):
         # Lectura del prefijo del proyecto (CSV publicados, manifiesto, originales de las cargas) y escritura solo
         # donde la app guarda archivos: exámenes del canal y CSV de las cargas por periodo (F0005)
         datos.bucket.grant_read(tarea.task_role, f"{entorno.prefijo_s3}/*")
+        if entorno.llm_proveedor == "bedrock" and ia is not None:
+            tarea.task_role.add_managed_policy(ia.politica)
         tarea.task_role.add_to_principal_policy(iam.PolicyStatement(
             actions=["ssm:GetParameter"],
             resources=[self.format_arn(service="ssm", resource="parameter",
