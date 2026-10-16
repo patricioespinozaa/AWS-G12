@@ -1,5 +1,5 @@
 import {
-  BarChart3, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Cross, Database,
+  BarChart3, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Cross,
   Inbox, ListOrdered, LogOut, MessageSquareText, MoonStar, Sparkles, SlidersHorizontal, Upload, UserRound,
 } from "lucide-react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
@@ -76,9 +76,6 @@ function Cabecera() {
         <small>Servicio de Salud Metropolitano Sur Oriente · Lista de espera de especialidades</small>
       </div>
       <div className="cabecera-derecha">
-        <span className="distintivo sinteticos" title="El dataset del hackatón es 100 % sintético: sin RUT ni nombres reales">
-          <Database size={13} /> Datos sintéticos
-        </span>
         {meta.llm.activo && (
           <span className="distintivo ia" title={`Amazon Bedrock · ${meta.llm.modelo}`}><Sparkles size={13} /> IA Amazon Bedrock</span>
         )}
@@ -133,10 +130,6 @@ function Lateral() {
           {enlace("/reglas", SlidersHorizontal, "Reglas del puntaje")}
         </div>
       </nav>
-      <div className="lateral-pie">
-        La herramienta <b>propone y explica</b>; la Administradora <b>decide</b>. La posición en la lista no es una fecha
-        garantizada de atención.
-      </div>
     </aside>
   );
 }

@@ -82,7 +82,7 @@ function SimularPaciente({ onEnviado }: { onEnviado: () => void }) {
     <div className="grid-lateral">
       <div className="pila">
         <Pasos actual={-1} pasos={[
-          { titulo: "Elige un paciente", detalle: "simulación con datos sintéticos" },
+          { titulo: "Elige un paciente", detalle: "de la lista de espera" },
           { titulo: "Envía un mensaje o examen", detalle: "desde el teléfono" },
           { titulo: "Valídalo en «Por validar»", detalle: "recién ahí se reevalúa" },
         ]} />
