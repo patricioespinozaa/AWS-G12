@@ -70,3 +70,76 @@ uv run pytest -m bedrock -s   # prueba contra Bedrock real (consume tokens; excl
 ```
 
 Los casos de referencia (`tests/ejemplos/test_casos_referencia.py`) usan el dataset real; si no está, se saltan.
+
+## Escenario: agregar una nueva SIC a un paciente que ya está en espera (IC-HLF-90002)
+
+Muestra la regla R11 de `reglas-v0.2.0`: dos SIC abiertas del mismo paciente se impactan en ambos sentidos. Se agrega a PAC-HLF-00002 (Cardiología adulto, I20, baja) una SIC ficticia de Cardiología / Insuficiencia cardíaca (I50, media), con ingreso el 2026-08-01.
+
+**Escribir solo la fila en `lista_espera.csv` no basta.** El motor lee las solicitudes desde `perfiles.json`; el CSV se usa solo para conciliar. Con la fila solo en el CSV, IC-HLF-90002 no se evalúa y IC-HLF-00002 recibe un hallazgo `conciliacion_diferencias` (verificado). Hay que agregarla en los dos archivos y volver a correr el lote: la bandeja solo muestra lo que dejó `hlf-lote`.
+
+**No modificar el dataset original ni `salidas/`.** El dataset del HLF es la referencia de todo lo demás, y las propuestas ya guardadas no se sobrescriben (el lote informaría conflictos para IC-HLF-00002). Se trabaja sobre una copia en `data/raw/` (no se versiona) y con salidas aparte (`salidas-escenario/`, tampoco se versiona).
+
+**1. Copiar el dataset**
+
+```powershell
+. .\scripts\entorno-demo.ps1
+Copy-Item -Recurse data\dataset_hlf_ambulatorio data\raw\escenario-90002
+```
+
+**2. Agregar la fila al final de `data\raw\escenario-90002\lista_espera.csv`** (UTF-8, mismas columnas que el encabezado):
+
+```csv
+PAC-HLF-00002,IC-HLF-90002,Cardiología,Insuficiencia cardíaca,I50,Insuficiencia cardíaca,media,2026-08-01,Hospitalización,en_espera
+```
+
+Columnas: `id_paciente, id_solicitud, especialidad, sub_especialidad, diagnostico_cie10, diagnostico_texto, prioridad_inicial, fecha_ingreso_lista, origen_derivacion, estado`.
+
+**3. Agregar la misma solicitud en `data\raw\escenario-90002\perfiles.json`.** En el perfil `PAC-HLF-00002`, `lista_espera` es un objeto; se convierte en una lista con las dos solicitudes:
+
+```json
+"lista_espera": [
+  { "...": "el objeto IC-HLF-00002 tal como estaba" },
+  {
+    "id_solicitud": "IC-HLF-90002",
+    "especialidad": "Cardiología",
+    "sub_especialidad": "Insuficiencia cardíaca",
+    "diagnostico_cie10": "I50",
+    "diagnostico_texto": "Insuficiencia cardíaca",
+    "prioridad_inicial": "media",
+    "fecha_ingreso_lista": "2026-08-01",
+    "origen_derivacion": "Hospitalización",
+    "estado": "en_espera"
+  }
+]
+```
+
+**4. Correr el lote en varias fechas de corte** (antes y después del ingreso de la nueva SIC):
+
+```powershell
+foreach ($f in "2026-07-20", "2026-07-31", "2026-08-01", "2026-08-10", "2026-10-13") {
+  uv run hlf-lote --fecha-corte $f --datos data\raw\escenario-90002 --salidas salidas-escenario
+}
+```
+
+**5. Abrir la bandeja sobre esas salidas**
+
+```powershell
+$env:HLF_SALIDAS = "salidas-escenario"; $env:HLF_DATOS = "data\raw\escenario-90002"
+uv run streamlit run app/bandeja.py
+```
+
+Elegir la versión `reglas-v0.2.0` en la barra lateral y comparar cortes en "¿Qué cambió?" (por ejemplo 2026-07-31 → 2026-08-01). En el Detalle de cada SIC aparece la otra SIC del paciente y el factor `otra_solicitud`.
+
+Resultado verificado al 2026-08-10 (reglas-v0.2.0, documento de relaciones v0.1.0):
+
+| | Sin IC-HLF-90002 | Con IC-HLF-90002 |
+|---|---|---|
+| IC-HLF-00002 (I20, baja) | 75,05 · crítica | 79,55 · crítica (+4,5 = 5 × 0,9 por la I50 media) |
+| IC-HLF-90002 (I50, media) | — | 92,47 · crítica (incluye +2,7 = 3 × 0,9 por la I20 baja) |
+
+Antes del 2026-08-01 la nueva SIC no existe para el motor (no hay fuga de información futura) y IC-HLF-00002 no cambia. La relación I20 ↔ I50 = 0,9 sale de `data/conocimiento/relaciones-clinicas-v0.1.0.yaml`, una plantilla sintética no validada clínicamente.
+
+Ten en cuenta:
+- La bandeja muestra un hallazgo de calidad `conciliacion_diferencias` en las dos SIC aunque CSV y perfil tengan dos filas (comprobado, causa no investigada; probablemente una diferencia de formato entre la fila del CSV y el objeto del JSON). Baja la confianza; no cambia el puntaje.
+- En este escenario no hay análisis del copiloto. Generarlos llama a Bedrock: `uv run hlf-copiloto --fecha-corte 2026-08-10 --datos data\raw\escenario-90002 --salidas salidas-escenario`.
+- Para borrar el escenario: `Remove-Item -Recurse data\raw\escenario-90002, salidas-escenario`.
