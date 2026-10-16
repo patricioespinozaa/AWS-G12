@@ -97,7 +97,7 @@ class DatosStack(Stack):
                 publicly_accessible=False,
                 multi_az=False,
                 backup_retention=Duration.days(entorno.dias_respaldo_rds),     # F0013: 7 en demo, 35 con datos reales
-                preferred_backup_window="07:00-08:00",                      # UTC: después de la corrida nocturna
+                preferred_backup_window="08:00-08:30",   # UTC: después de la corrida nocturna y sin cruzar la mantención (mié 07:10)
                 deletion_protection=retener,
                 removal_policy=RemovalPolicy.SNAPSHOT if retener else RemovalPolicy.DESTROY,
                 cloudwatch_logs_exports=["postgresql"],
