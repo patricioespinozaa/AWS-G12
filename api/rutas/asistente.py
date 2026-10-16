@@ -150,6 +150,27 @@ def exigir_servicio(x_hlf_servicio: str | None):
         raise HTTPException(401, "Servicio no autorizado.")
 
 
+class EventoVoz(BaseModel):
+    evento_lex: dict
+
+
+@router_interno.post("/api/interno/asistente/voz")
+def entrada_voz(e: EventoVoz, x_hlf_servicio: str | None = Header(default=None)):
+    """Code hook de Lex V2 (F0011): devuelve la respuesta para Lex. La grabación solo con consentimiento."""
+    exigir_servicio(x_hlf_servicio)
+    _exigir_rds()
+    from servicios.asistente import voz
+    respuesta = voz.atender(e.evento_lex, nucleo().procesar)
+    atributos = respuesta["sessionState"]["sessionAttributes"]
+    if (atributos.get("grabacion") == "si" and atributos.get("grabacion_registrada") != "true"
+            and atributos.get("id_conversacion") and config.S3_BUCKET):
+        uri = f"s3://{config.S3_BUCKET}/{config.S3_PREFIJO}/connect/grabaciones"
+        if voz.registrar_grabacion(_conexion, int(atributos["id_conversacion"]),
+                                   atributos.get("contactId") or e.evento_lex.get("sessionId", ""), uri):
+            atributos["grabacion_registrada"] = "true"
+    return respuesta
+
+
 class EventoWhatsApp(BaseModel):
     evento_sns: str = Field(max_length=200_000)
 
