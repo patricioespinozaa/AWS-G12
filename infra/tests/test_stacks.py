@@ -324,7 +324,7 @@ def test_examenes_cifrados_escaneados_y_sin_descarga_de_amenazas(plantillas):
                  if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
     variables = {v["Name"]: v.get("Value") for v in tarea["Properties"]["ContainerDefinitions"][0]["Environment"]}
     planes = _recursos(t["asistente"], "AWS::GuardDuty::MalwareProtectionPlan")
-    if entorno == "demo":
+    if entorno == "piloto":                    # demo no puede: la SCP del hackatón niega GuardDuty
         (plan,) = planes.values()
         assert "canal/evidencias/" in json.dumps(plan["Properties"]["ProtectedResource"])
         assert plan["Properties"]["Actions"]["Tagging"]["Status"] == "ENABLED"
@@ -336,6 +336,8 @@ def test_examenes_cifrados_escaneados_y_sin_descarga_de_amenazas(plantillas):
         assert "HLF_EXAMENES_KMS_KEY_ID" in variables and variables.get("HLF_EXAMENES_ESCANEO") == "1"
     else:
         assert not planes
+        if entorno == "demo":
+            assert variables.get("HLF_EXAMENES_ESCANEO") == "0"
 
 
 def test_observabilidad_tablero_alarmas_y_presupuesto(plantillas):
@@ -347,7 +349,7 @@ def test_observabilidad_tablero_alarmas_y_presupuesto(plantillas):
     nombres = {a["Properties"]["AlarmName"] for a in _recursos(o, "AWS::CloudWatch::Alarm").values()}
     base = {f"hlf-{entorno}-{n}" for n in ("api-5xx", "backend-tareas", "lambda-whatsapp")}
     assert base <= nombres
-    con_rds = {f"hlf-{entorno}-{n}" for n in ("rds-almacenamiento", "nocturno-fallido", "lambda-voz", "lambda-escaneo-examenes")}
+    con_rds = {f"hlf-{entorno}-{n}" for n in ("rds-almacenamiento", "nocturno-fallido", "lambda-voz")}
     assert (con_rds <= nombres) == (entorno == "demo")
     assert all(a["Properties"]["AlarmActions"] for a in _recursos(o, "AWS::CloudWatch::Alarm").values())
     tareas = next(a for a in _recursos(o, "AWS::CloudWatch::Alarm").values()
@@ -430,6 +432,7 @@ def test_piloto_cumple_la_lista_previa_a_datos_reales(piloto):
     assert "respaldo_copia" in t and _recursos(t["respaldo_copia"], "AWS::Backup::BackupVault")
     t["identidad"].has_resource_properties("AWS::Cognito::UserPool", {"MfaConfiguration": "ON"})
     t["observabilidad"].has_resource_properties("AWS::SNS::Subscription", {"Protocol": "email"})
+    assert _recursos(t["asistente"], "AWS::GuardDuty::MalwareProtectionPlan")      # escaneo obligatorio
     assert "voz" not in t                                                      # sin voz en el piloto
 
 

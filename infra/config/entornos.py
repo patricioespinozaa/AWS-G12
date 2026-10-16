@@ -77,7 +77,9 @@ ENTORNOS = {
     # Demo del hackatón: los datos y la base sobreviven a un destroy accidental.
     "demo": Entorno("demo", crear_rds=True, retener_datos=True, dias_logs=30, llm_proveedor="bedrock",
                     bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0", estimacion_publicable=True,
-                    voz=True, examenes_guardduty=True, presupuesto_usd=150, dias_respaldo_rds=7),
+                    # GuardDuty: la SCP de la cuenta del hackatón niega CreateMalwareProtectionPlan. Sin escaneo, los
+                    # exámenes quedan `sin_escaneo` y se leen igual (datos sintéticos); en piloto es obligatorio
+                    voz=True, examenes_guardduty=False, presupuesto_usd=150, dias_respaldo_rds=7),
     # Piloto con datos reales del HLF: todo lo de la lista de verificación de F0013. Sin voz ni estimación publicable
     "piloto": Entorno("piloto", nat_gateways=1, crear_rds=True, retener_datos=True, dias_logs=365,
                       llm_proveedor="bedrock", bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
