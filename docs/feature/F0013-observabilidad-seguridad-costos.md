@@ -1,6 +1,6 @@
 # F0013 · Observabilidad, seguridad y control de costos
 
-**Estado:** Plan · **Depende de:** F0004 (se amplía con cada feature que agrega servicios) · **Tamaño:** M
+**Estado:** Implementado · **Depende de:** F0004 (se amplía con cada feature que agrega servicios) · **Tamaño:** M
 
 ## Objetivo
 
@@ -75,3 +75,25 @@ infra/README.md                  runbook: alarmas, cómo reaccionar, cómo resta
 
 - **Costo fijo de WAF y CloudTrail en la demo:** activarlos solo en el entorno real, con un flag.
 - **Retención:** acordar con el HLF los plazos legales de retención de conversaciones y registros clínicos.
+
+## Resultado
+
+Implementado y probado en local (templates sintetizados); el despliegue queda pendiente porque las credenciales de la cuenta del hackatón vencieron durante la implementación.
+
+| Pieza | Implementación |
+|---|---|
+| Logs | `servicios/comun/logs.py`: JSON de una línea en AWS (texto legible en local, o `HLF_LOG_FORMATO=json`), con `id_correlacion`. Los mensajes que ya eran JSON (Bedrock de F0008, OCR de F0012) suben sus campos al primer nivel. Enmascara RUT, teléfonos y correos, y omite los campos `nombre`, `telefono`, `rut`, `correo` y `texto` |
+| Correlación | Middleware de `api/main.py`: toma `X-Correlation-Id` (las Lambdas mandan su `aws_request_id`) o `X-Amz-Cf-Id` de CloudFront, o crea uno; lo devuelve en la respuesta y escribe una línea por petición a `/api` (método, plantilla de la ruta, estado, ms; sin cuerpo ni query). La corrida nocturna escribe `{"evento": "nocturno", "resultado": …}` |
+| Tablero y alarmas | `infra/stacks/observabilidad.py`: tablero `hlf-<entorno>` (estado de las alarmas, costo del mes, API, backend, RDS, corrida nocturna, Lambdas, Bedrock y Athena). Alarmas al tema SNS, con correo desde `HLF_CORREO_ALARMAS` (el correo no va en el repo): `api-5xx` (> 5 % durante 5 minutos, incluye los 503 del ALB sin tareas), `backend-tareas` (tareas sanas bajo lo deseado en 2 de 3 minutos), `rds-almacenamiento` (< 20 %), `nocturno-fallido` (filtro de métricas de la línea de log + regla de EventBridge si la tarea muere con código ≠ 0) y una por Lambda |
+| Costos | Presupuesto mensual (`presupuesto_usd`: 150 en demo, 400 en piloto) con alertas al 50, 80 y 100 % al mismo tema. Etiquetas `proyecto` y `entorno` en todos los stacks, verificadas recurso por recurso |
+| Seguridad | `infra/stacks/seguridad.py`, por flag: WAF en CloudFront (Core, Known Bad Inputs, SQLi, límite por IP y solo Chile; `SizeRestrictions_BODY` solo cuenta, porque la vista Cargas sube CSV por la API), CloudTrail multirregión con validación de archivos y bucket con bloqueo de objetos (modo gobernanza, 1 año), y AWS Backup diario de RDS con copia a otra región |
+| Cifrado | `cmk`: clave propia para el bucket de datos, RDS, los resultados de Athena y los logs del backend; los permisos de la KB, la consulta y GuardDuty incluyen la clave. El canal ya tenía las suyas (teléfonos, F0010; exámenes, F0012) |
+| Respaldo | Backups automáticos de RDS de 1/7/35 días (dev/demo/piloto) en una ventana posterior a la corrida nocturna; rotación del secreto de RDS cada 30 días (rotación alojada de Secrets Manager, en las subredes del backend) |
+| Entorno `piloto` | Nuevo en `infra/config/entornos.py`: reúne todo lo de la lista de verificación. dev y demo no pagan WAF ni CloudTrail (decisión del plan) |
+| Runbook | `infra/README.md`: qué hacer con cada alarma, cómo seguir un `id_correlacion`, cómo restaurar RDS, y simulacros con `infra/scripts/simulacro.sh` (alarma forzada, tarea detenida, inyección SQL contra el WAF) |
+
+**Pruebas:** `tests/test_logs.py` (JSON con correlación, ids externos solo con forma de id, enmascarado sin tocar fechas ni ids de paciente, excepciones, cabecera y línea por petición de la API). Infraestructura: tablero, alarmas con acción, período de `backend-tareas` ≤ 10 minutos, presupuesto con sus tres umbrales y los filtros de la corrida nocturna en demo; ni WAF ni CloudTrail en dev y demo; el piloto cumple la lista (NAT, tareas sin IP pública, KMS en bucket, RDS y logs, 35 días, rotación, WAF con SQLi asociado a CloudFront, CloudTrail con bloqueo de objetos, copia del respaldo en otra región, MFA, correo de alarmas) y todos sus recursos llevan `proyecto` y `entorno`.
+
+**Pendiente al desplegar:** `HLF_CORREO_ALARMAS=<correo> npx aws-cdk@2 deploy HlfDemo-Observabilidad HlfDemo-Seguridad HlfDemo-Backend HlfDemo-Frontend -c entorno=demo`, confirmar la suscripción, correr `bash infra/scripts/simulacro.sh alarma` y `… tarea` (medir el tiempo hasta el correo) y probar una restauración de RDS. Lo que no es código (fuera de CDK a propósito): SSO para personas, OIDC para GitHub Actions cuando exista el despliegue desde CI, Lake Formation sobre `hlf_raw` e `hlf_historial` y los acuerdos de la lista con el HLF.
+
+**Estado de la lista** (lo que el código ya resuelve en `piloto`): MFA obligatorio; NAT y subred privada; KMS propias, CloudTrail y WAF; logs sin datos personales (filtro + prueba). Siguen abiertos: región acordada por escrito, verificación del asistente en un servicio aparte, restauración probada y comité de ética.

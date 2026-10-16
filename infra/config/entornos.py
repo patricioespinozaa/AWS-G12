@@ -43,6 +43,19 @@ class Entorno:
     voz_pais: str = "US"               # números chilenos según disponibilidad de Connect (ver F0011, Riesgos)
     # Identidad (F0007): MFA opcional en la demo; obligatorio con datos reales
     mfa_obligatorio: bool = False
+    # Observabilidad y costos (F0013). El correo de las alarmas sale de HLF_CORREO_ALARMAS (no va en el repo)
+    correo_alarmas: str = ""
+    presupuesto_usd: int = 0           # 0 = sin presupuesto; alertas al 50, 80 y 100 %
+    # Seguridad (F0013). WAF y CloudTrail tienen costo fijo: solo con datos reales (decisión del plan)
+    waf: bool = False
+    waf_solo_chile: bool = False       # bloqueo geográfico en un piloto
+    waf_limite_ip: int = 1000          # peticiones por IP cada 5 minutos
+    cloudtrail: bool = False
+    cmk: bool = False                  # claves KMS propias para datos (bucket, RDS, Athena) y logs
+    dias_respaldo_rds: int = 1         # backups automáticos de RDS
+    respaldo: bool = False             # AWS Backup diario de RDS
+    respaldo_region_copia: str = ""    # copia del respaldo en otra región
+    rotar_secreto_rds: bool = False    # rotación cada 30 días (requiere NAT: la Lambda llama a Secrets Manager)
 
     @property
     def id(self) -> str:
@@ -64,7 +77,13 @@ ENTORNOS = {
     # Demo del hackatón: los datos y la base sobreviven a un destroy accidental.
     "demo": Entorno("demo", crear_rds=True, retener_datos=True, dias_logs=30, llm_proveedor="bedrock",
                     bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0", estimacion_publicable=True,
-                    voz=True, examenes_guardduty=True),
+                    voz=True, examenes_guardduty=True, presupuesto_usd=150, dias_respaldo_rds=7),
+    # Piloto con datos reales del HLF: todo lo de la lista de verificación de F0013. Sin voz ni estimación publicable
+    "piloto": Entorno("piloto", nat_gateways=1, crear_rds=True, retener_datos=True, dias_logs=365,
+                      llm_proveedor="bedrock", bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                      examenes_guardduty=True, mfa_obligatorio=True, presupuesto_usd=400, waf=True,
+                      waf_solo_chile=True, cloudtrail=True, cmk=True, dias_respaldo_rds=35, respaldo=True,
+                      respaldo_region_copia="us-west-2", rotar_secreto_rds=True),
 }
 
 
@@ -72,5 +91,6 @@ def cargar(nombre: str) -> Entorno:
     if nombre not in ENTORNOS:
         raise ValueError(f"Entorno desconocido: {nombre}. Opciones: {', '.join(ENTORNOS)}")
     return replace(ENTORNOS[nombre],
+                   correo_alarmas=os.environ.get("HLF_CORREO_ALARMAS", ""),
                    cuenta=os.environ.get("HLF_CUENTA") or os.environ.get("CDK_DEFAULT_ACCOUNT"),
                    region=os.environ.get("HLF_REGION") or os.environ.get("CDK_DEFAULT_REGION"))

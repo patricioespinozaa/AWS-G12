@@ -18,7 +18,9 @@ from stacks.datos import DatosStack
 from stacks.frontend import FrontendStack
 from stacks.ia import IaStack
 from stacks.identidad import IdentidadStack
+from stacks.observabilidad import ObservabilidadStack
 from stacks.red import RedStack
+from stacks.seguridad import RespaldoCopiaStack, SeguridadStack
 from stacks.voz import VozStack
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -35,12 +37,27 @@ def construir(app: cdk.App, nombre_entorno: str, dist: Path = RAIZ / "web" / "di
     asistente = AsistenteStack(app, f"{entorno.id}-Asistente", entorno=entorno, datos=datos, env=env)
     backend = BackendStack(app, f"{entorno.id}-Backend", entorno=entorno, red=red, datos=datos, ia=ia,
                            consulta=consulta, asistente=asistente, env=env)
+    # F0013: WAF, CloudTrail y respaldo (cada uno por flag); el WAF se asocia a CloudFront
+    seguridad = SeguridadStack(app, f"{entorno.id}-Seguridad", entorno=entorno, datos=datos, env=env)
     frontend = FrontendStack(app, f"{entorno.id}-Frontend", entorno=entorno, red=red, backend=backend,
-                             identidad=identidad, dist=dist, parametro_api=asistente.parametro_api, env=env)
+                             identidad=identidad, dist=dist, parametro_api=asistente.parametro_api,
+                             web_acl_arn=seguridad.web_acl.attr_arn if seguridad.web_acl else None, env=env)
     pilas = {"red": red, "datos": datos, "identidad": identidad, "ia": ia, "consulta": consulta, "asistente": asistente,
-             "backend": backend, "frontend": frontend}
+             "backend": backend, "seguridad": seguridad, "frontend": frontend}
+    if entorno.respaldo and entorno.respaldo_region_copia:
+        copia = RespaldoCopiaStack(app, f"{entorno.id}-RespaldoCopia", entorno=entorno,
+                                   env=cdk.Environment(account=entorno.cuenta, region=entorno.respaldo_region_copia))
+        seguridad.add_dependency(copia)
+        pilas["respaldo_copia"] = copia
+    lambdas = {"whatsapp": asistente.funcion}
+    if asistente.funcion_escaneo is not None:
+        lambdas["escaneo-examenes"] = asistente.funcion_escaneo
     if entorno.voz:                    # F0011: Connect y Lex en su propio stack (se despliega aparte si hace falta)
         pilas["voz"] = VozStack(app, f"{entorno.id}-Voz", entorno=entorno, asistente=asistente, datos=datos, env=env)
+        lambdas["voz"] = pilas["voz"].funcion
+    # F0013: tablero, alarmas y presupuesto (al final: lee métricas de todos)
+    pilas["observabilidad"] = ObservabilidadStack(app, f"{entorno.id}-Observabilidad", entorno=entorno, datos=datos,
+                                                  backend=backend, lambdas=lambdas, env=env)
     for stack in pilas.values():
         cdk.Tags.of(stack).add("proyecto", "hlf-priorizacion")
         cdk.Tags.of(stack).add("entorno", entorno.nombre)
