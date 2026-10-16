@@ -1,7 +1,8 @@
+import { BarChart3, Clock, Scale, ShieldCheck, Target, Users } from "lucide-react";
 import { Fragment } from "react";
 import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Registro, useApi } from "../api";
-import { Aviso, Cargando, EnlacePaciente, Metrica, NivelBadge, Tabla } from "../componentes/comunes";
+import { Aviso, Cargando, Encabezado, EnlacePaciente, Metrica, NivelBadge, Tabla } from "../componentes/comunes";
 import { useApp } from "../contexto";
 import { COLOR_NIVEL, fechaEje, num, pct, ticksMensuales, ts } from "../utils";
 
@@ -14,10 +15,7 @@ export default function Kpis() {
   const { data, error } = useApi<Registro>(`/api/kpis?corte=${corte}`, version);
   return (
     <>
-      <div className="encabezado">
-        <h1>📊 KPIs del desafío</h1>
-        <p>Calculados sobre la serie nocturna hasta el <b>{corte}</b> (ver <code>docs/kpis.md</code>).</p>
-      </div>
+      <Encabezado icono={BarChart3} titulo="Indicadores" descripcion={<>Metas del desafío, calculadas sobre la serie nocturna hasta el <b>{corte}</b>.</>} />
       {error && <Aviso tipo="error">{error}</Aviso>}
       {!data ? <Cargando texto="Calculando KPIs (la primera vez toma unos segundos)…" /> : <Contenido d={data} />}
     </>
@@ -35,22 +33,17 @@ function Contenido({ d }: { d: Registro }) {
   return (
     <div className="pila">
       <div className="metricas">
-        <Metrica destacada etiqueta="⭐ Tiempo a reevaluación < 72 h" valor={pct(re.pct_menos_72h)}
-          detalle={`${re.eventos} eventos relevantes · mediana ≤ ${num(re.mediana_horas, 0)} h (corrida de esa misma noche) · meta < 72 h`} />
-        <Metrica etiqueta="Eventos graves con alerta esa noche" valor={pct(re.pct_alerta_graves)} detalle="regla dura determinista" />
-        <Metrica etiqueta="Cobertura" valor={pct(d.cobertura.pct)} detalle={`${d.cobertura.con_propuesta} de ${d.cobertura.activas} solicitudes con criterio común · meta 100 %`} />
-        <Metrica etiqueta="Concordancia (κ ponderado)" valor={conc.n >= 2 && conc.kappa !== null ? num(conc.kappa, 2) : "—"}
-          detalle={conc.n ? `${conc.n} decisiones · ${pct(conc.pct_acepta)} aceptadas · meta κ ≥ 0,70` : "Aún no hay decisiones clínicas registradas · meta κ ≥ 0,70"} />
-        <Metrica etiqueta="Controles visibles" valor="No medible" detalle="el dataset no trae texto libre ni lista de controles · meta ≥ 90 %" />
+        <Metrica destacada icono={Clock} etiqueta="Reevaluación < 72 h" valor={pct(re.pct_menos_72h)}
+          detalle={`${re.eventos} eventos · mediana ≤ ${num(re.mediana_horas, 0)} h · meta < 72 h`} />
+        <Metrica icono={ShieldCheck} etiqueta="Eventos graves con alerta" valor={pct(re.pct_alerta_graves)} detalle="la misma noche" />
+        <Metrica icono={Target} etiqueta="Cobertura" valor={pct(d.cobertura.pct)} detalle={`${d.cobertura.con_propuesta} de ${d.cobertura.activas} solicitudes · meta 100 %`} />
+        <Metrica icono={Scale} etiqueta="Concordancia (κ)" valor={conc.n >= 2 && conc.kappa !== null ? num(conc.kappa, 2) : "—"}
+          detalle={conc.n ? `${conc.n} decisiones · ${pct(conc.pct_acepta)} aceptadas · meta ≥ 0,70` : "sin decisiones aún · meta ≥ 0,70"} />
       </div>
-      <Aviso tipo="info">
-        Con la lista congelada, ninguno de estos eventos habría reevaluado la prioridad. En producción el tiempo real depende
-        de cuándo cada fuente carga el dato; el proceso nocturno lo incorpora la noche en que llega.
-      </Aviso>
 
       <div className="grid-2">
         <div className="tarjeta pila">
-          <h3>Foto vs. película: prioridad inicial → propuesta al corte</h3>
+          <h3>Prioridad inicial → propuesta al corte</h3>
           <div className="matriz">
             <div className="cab">inicial ↓ / propuesta →</div>
             {niveles.map((n) => <div key={n} className="cab"><NivelBadge nivel={n} /></div>)}
@@ -66,7 +59,7 @@ function Contenido({ d }: { d: Registro }) {
               </Fragment>
             ))}
           </div>
-          <small>Diagonal: sin cambio. Rojo: la propuesta sube la prioridad. Verde: la baja (solo con evidencia de mejora).</small>
+          <small className="suave">Diagonal: sin cambio. Rojo: sube. Verde: baja (solo con evidencia de mejora).</small>
         </div>
         <div className="tarjeta">
           <h3>Pacientes en prioridad alta cada noche</h3>
@@ -88,8 +81,8 @@ function Contenido({ d }: { d: Registro }) {
       </div>
 
       <div className="tarjeta pila">
-        <h3>Los que la lista congelada no ve: {invisibles.length} pacientes</h3>
-        <p className="suave">En lista al corte, con prioridad inicial baja o media y al menos un evento grave en el último año. Qué propone el sistema para ellos y cuánto adelantan en su cola.</p>
+        <h3 className="transicion"><Users size={16} /> Los que la lista congelada no ve: {invisibles.length}</h3>
+        <small className="suave">Prioridad inicial baja o media con al menos un evento grave en el último año.</small>
         <Tabla filas={invisibles} alta vacia="No hay pacientes en esta situación al corte." columnas={[
           { clave: "nombre", titulo: "Paciente", render: (f) => <EnlacePaciente id={f.id_solicitud} nombre={f.nombre} idPaciente={f.id_paciente} /> },
           { clave: "especialidad", titulo: "Especialidad" },
@@ -104,7 +97,7 @@ function Contenido({ d }: { d: Registro }) {
 
       <div className="tarjeta pila">
         <h3>Equidad: ¿a quién mueve la propuesta?</h3>
-        <p className="suave">% de pacientes de cada grupo con propuesta de subir o de bajar. Diferencias grandes entre grupos sin explicación clínica deben revisarse: subir siempre a quien más consulta puede premiar el acceso y no la necesidad.</p>
+        <small className="suave">% de cada grupo con propuesta de subir o bajar. Diferencias grandes sin explicación clínica deben revisarse.</small>
         <div className="grid-3">
           {Object.entries(d.equidad as Record<string, Registro[]>).map(([var_, filas]) => (
             <div key={var_}>

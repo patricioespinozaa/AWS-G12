@@ -1,6 +1,7 @@
+import { History, RotateCcw, Save, Search, SlidersHorizontal, FlaskConical } from "lucide-react";
 import { useMemo, useState } from "react";
 import { postJSON, Registro, useApi } from "../api";
-import { Aviso, Cargando, Metrica, NivelBadge, Pestanas, Tabla } from "../componentes/comunes";
+import { Aviso, Cargando, Encabezado, Metrica, NivelBadge, Pasos, Pestanas, Tabla } from "../componentes/comunes";
 import { useApp } from "../contexto";
 
 type Valor = number | string;
@@ -146,14 +147,8 @@ export default function Reglas() {
 
   return (
     <>
-      <div className="encabezado">
-        <h1>⚙️ Reglas del puntaje</h1>
-        <p>
-          Todos los pesos, umbrales y ventanas con que el motor propone la prioridad. Cada cambio se guarda como una
-          versión nueva con su motivo, se puede simular antes de guardar y siempre se puede volver atrás. Las propuestas
-          quedan marcadas con la versión con que se calcularon; las decisiones ya tomadas no cambian.
-        </p>
-      </div>
+      <Encabezado icono={SlidersHorizontal} titulo="Reglas del puntaje"
+        descripcion="Pesos, umbrales y ventanas del motor. Cada cambio es una versión nueva con motivo, y siempre se puede volver atrás." />
       {error && <Aviso tipo="error">{error}</Aviso>}
       {aviso && <Aviso tipo="exito">{aviso}</Aviso>}
       {enCurso && <Aviso tipo="atencion">Hay un recálculo en curso: espera a que termine para simular o guardar otra versión.</Aviso>}
@@ -170,17 +165,23 @@ export default function Reglas() {
               detalle={data.numero === 0 ? "valores de fábrica" : `versión ${data.numero}`} />
             <Metrica etiqueta="Parámetros editables" valor={params.length} />
             <Metrica etiqueta="Distintos de fábrica" valor={params.filter((p) => String(p.valor) !== String(p.fabrica)).length} />
-            <Metrica etiqueta="Fecha de corte" valor={data.fecha_corte} />
           </div>
-          <Pestanas opciones={[{ id: "parametros", etiqueta: "Parámetros" }, { id: "historial", etiqueta: "Historial de versiones" }]}
+          <Pestanas opciones={[{ id: "parametros", etiqueta: "Parámetros", icono: SlidersHorizontal }, { id: "historial", etiqueta: "Historial de versiones", icono: History }]}
             activa={pestana} onCambio={setPestana} />
 
           {pestana === "parametros" && (
             <>
+              <Pasos actual={sim ? 2 : cambios.length ? 1 : 0} pasos={[
+                { titulo: "Cambia los valores", detalle: "se marcan y validan al escribir" },
+                { titulo: "Simula el efecto", detalle: "quién sube o baja, sin guardar" },
+                { titulo: "Guarda con motivo", detalle: "versión nueva y recálculo" },
+              ]} />
               <div className="tarjeta pila reglas-acciones">
                 <div className="fila entre">
-                  <input placeholder="Buscar una regla (p. ej. UCI, glicemia, edad)…" value={filtro}
-                    onChange={(e) => setFiltro(e.target.value)} style={{ flex: 1, maxWidth: 420 }} />
+                  <div className="buscador">
+                    <Search size={15} />
+                    <input placeholder="Buscar regla: UCI, glicemia…" value={filtro} onChange={(e) => setFiltro(e.target.value)} />
+                  </div>
                   <b>{cambios.length === 0 ? "Sin cambios" : `${cambios.length} cambio${cambios.length > 1 ? "s" : ""}`}</b>
                 </div>
                 {cambios.length > 0 && (
@@ -189,12 +190,12 @@ export default function Reglas() {
                       onChange={(e) => setMotivo(e.target.value)} rows={2} />
                     <div className="fila">
                       <button className="boton" onClick={simular} disabled={!!ocupado || enCurso || invalidos.length > 0}>
-                        {ocupado === "simular" ? "Simulando…" : "🔍 Simular el efecto"}
+                        <FlaskConical size={15} /> {ocupado === "simular" ? "Simulando…" : "Simular el efecto"}
                       </button>
                       <button className="boton primario" onClick={guardar}
                         disabled={!!ocupado || enCurso || invalidos.length > 0 || motivo.trim().length < 5}
                         title={motivo.trim().length < 5 ? "Escribe el motivo" : ""}>
-                        {ocupado === "guardar" ? "Guardando…" : "💾 Guardar como versión nueva"}
+                        <Save size={15} /> {ocupado === "guardar" ? "Guardando…" : "Guardar como versión nueva"}
                       </button>
                       <button className="boton" onClick={descartar} disabled={!!ocupado}>Descartar</button>
                       {invalidos.length > 0 && <small style={{ color: "#c0392b" }}>Corrige los valores marcados en rojo.</small>}
@@ -257,7 +258,7 @@ export default function Reglas() {
                             <td>
                               {(cambiado || String(p.valor) !== String(p.fabrica)) && (
                                 <button className="boton chico" title="Volver al valor de fábrica" disabled={!!ocupado}
-                                  onClick={() => cambiar(p, p.fabrica)}>↺</button>
+                                  onClick={() => cambiar(p, p.fabrica)}><RotateCcw size={13} /></button>
                               )}
                             </td>
                           </tr>
@@ -268,8 +269,7 @@ export default function Reglas() {
                 </div>
               ))}
               <div className="tarjeta pila">
-                <h3>Información de referencia (no editable aquí)</h3>
-                <small className="suave">Nombres, unidades y supuestos sobre la red de derivación: cambian con el código.</small>
+                <h3>Referencia (no editable)</h3>
                 <Tabla filas={data.solo_lectura} columnas={[
                   { clave: "grupo", titulo: "Grupo" }, { clave: "nombre", titulo: "Regla" }, { clave: "valor", titulo: "Valor" }]} />
               </div>
