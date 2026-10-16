@@ -519,3 +519,11 @@
 **Context**: CONSTRUCTION - U1 (cambio de reglas, esperando aprobación)
 
 ---
+
+## Commit v0.2.0 y escenario IC-HLF-90002
+**Timestamp**: 2026-10-16T12:00:00Z
+**User Input**: "1. Haga el commit. 2. Y dado que ya había intentado con crear una solicitud en la lista de espera "IC-HLF-90002", en dado caso, basta con escribir una nueva fila formal en "data\dataset_hlf_ambulatorio\lista_espera.csv", y al volver a ejecutar "uv run streamlit run app/bandeja.py", uno ya puede visualizar impactos al cambiar fecha de corte? Podrías escribir la fila completa de IC-HLF-90002 en README?"
+**AI Response**: Commits 19cf276 (reglas-v0.2.0, incluye data/conocimiento y data/synthetic) y uno de README/.gitignore en feat-any, sin push. Experimento en copias temporales del dataset: con la fila solo en el CSV, IC-HLF-90002 no se evalúa e IC-HLF-00002 recibe conciliacion_diferencias; con la solicitud también en perfiles.json, al 2026-08-10: IC-HLF-00002 75,05 → 79,55 e IC-HLF-90002 92,47 (crítica). Persiste un hallazgo conciliacion_diferencias aun con 2 y 2 filas (causa no investigada). README documenta el procedimiento sobre una copia en data/raw/ y salidas-escenario/ (agregado salidas-*/ a .gitignore), sin tocar el dataset ni salidas/.
+**Context**: CONSTRUCTION - U1 v0.2.0
+
+---

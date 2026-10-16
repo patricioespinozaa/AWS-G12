@@ -121,7 +121,7 @@ foreach ($f in "2026-07-20", "2026-07-31", "2026-08-01", "2026-08-10", "2026-10-
 }
 ```
 
-**5. Abrir la bandeja sobre esas salidas**
+**5. Abrir la bandeja sobre esas salidas** (solo después de los pasos 1 a 4; si las carpetas no existen, la bandeja dice que no hay cortes)
 
 ```powershell
 $env:HLF_SALIDAS = "salidas-escenario"; $env:HLF_DATOS = "data\raw\escenario-90002"
@@ -140,6 +140,7 @@ Resultado verificado al 2026-08-10 (reglas-v0.2.0, documento de relaciones v0.1.
 Antes del 2026-08-01 la nueva SIC no existe para el motor (no hay fuga de información futura) y IC-HLF-00002 no cambia. La relación I20 ↔ I50 = 0,9 sale de `data/conocimiento/relaciones-clinicas-v0.1.0.yaml`, una plantilla sintética no validada clínicamente.
 
 Ten en cuenta:
-- La bandeja muestra un hallazgo de calidad `conciliacion_diferencias` en las dos SIC aunque CSV y perfil tengan dos filas (comprobado, causa no investigada; probablemente una diferencia de formato entre la fila del CSV y el objeto del JSON). Baja la confianza; no cambia el puntaje.
+- Guarda los dos archivos en **UTF-8** (por ejemplo, desde el editor). Si agregas la fila con PowerShell 5.1, usa `[IO.File]::AppendAllText("data\raw\escenario-90002\lista_espera.csv", "<fila>`r`n", [Text.UTF8Encoding]::new($false))`; otros comandos pueden cambiar las tildes ("Cardiología") y la fila ya no coincide con el perfil, lo que produce un hallazgo `conciliacion_diferencias`. Con la fila bien escrita no aparece ese hallazgo (verificado).
+- Las variables `HLF_SALIDAS` y `HLF_DATOS` valen solo en esa terminal. Para volver a la bandeja normal: `Remove-Item Env:HLF_SALIDAS, Env:HLF_DATOS -ErrorAction SilentlyContinue` (o abrir otra terminal).
 - En este escenario no hay análisis del copiloto. Generarlos llama a Bedrock: `uv run hlf-copiloto --fecha-corte 2026-08-10 --datos data\raw\escenario-90002 --salidas salidas-escenario`.
 - Para borrar el escenario: `Remove-Item -Recurse data\raw\escenario-90002, salidas-escenario`.
