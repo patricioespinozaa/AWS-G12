@@ -433,3 +433,11 @@
 **Context**: CONSTRUCTION - U2/U3 (esperando aprobación de U3)
 
 ---
+
+## Commit del MVP
+**Timestamp**: 2026-10-16T05:45:00Z
+**User Input**: "Crea el commit."
+**AI Response**: Commit en la rama feat-any (no main, sin push) con U1, U2, U3, contexto técnico, artefactos AI-DLC, .kiro (reglas AI-DLC), scripts, pyproject.toml y uv.lock. Revisado antes: sin secretos, sin CSV/Parquet/JSONL de datos ni archivos grandes; salidas/ y el dataset siguen ignorados. Se dejó fuera mcp.json de la raíz (configuración mal ubicada que Kiro no lee).
+**Context**: CONSTRUCTION - entre U3 y Build and Test
+
+---
