@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 from db import carga, esquema
 from db.conexion import conectar
@@ -95,7 +96,44 @@ def correr(buzon=None, url: str | None = None, autoconfirmar: bool | None = None
                            id_carga=ultima_carga, publicar=publicar, extra=extra)
     resultado["con_errores"] = any(e["estado"] == "fallida" for e in entregas)
     resultado["kb"] = _sincronizar_kb(url, hubo_datos_nuevos=ultima_carga is not None, fecha_corte=resultado["fecha_corte"])
+    resultado["kb_paciente"] = _sincronizar_faq(url)
+    resultado["recordatorios"] = _recordatorios(url, resultado["fecha_corte"])
     return resultado
+
+
+def _sincronizar_faq(url: str | None) -> dict | None:
+    """F0010: la KB de preguntas frecuentes se sincroniza una vez (y cuando no tiene una ingesta completa)."""
+    if not config.KB_PACIENTE_ID:
+        return None
+    try:
+        from servicios.consulta_ia import registro as RC
+        from servicios.preparacion_kb.proceso import preparar_faq
+        with conectar(url) as conn:
+            if RC.kb_vigente(conn, config.KB_PACIENTE_ID):
+                return {"estado": "al_dia"}
+        return preparar_faq(url)
+    except Exception as e:  # noqa: BLE001
+        log.exception("No se pudo sincronizar la KB del paciente")
+        return {"estado": "fallida", "error": f"{type(e).__name__}: {str(e)[:300]}"}
+
+
+def _recordatorios(url: str | None, fecha_corte: str) -> dict | None:
+    """F0010: recordatorios de las citas del día siguiente (solo con consentimiento) y envío por WhatsApp."""
+    from datetime import date
+    try:
+        from servicios.asistente import recordatorios, whatsapp
+        enviar = None
+        if origen := os.environ.get("HLF_WHATSAPP_ORIGEN"):
+            import boto3
+            cliente = boto3.client("socialmessaging", region_name=config.AWS_REGION)
+            enviar = lambda cuerpo: whatsapp.enviar(cliente, origen, cuerpo)  # noqa: E731
+        with conectar(url) as conn:
+            conn.autocommit = True
+            programados = recordatorios.programar(conn, date.fromisoformat(fecha_corte))
+            return {"programados": programados, **recordatorios.enviar_pendientes(conn, enviar)}
+    except Exception as e:  # noqa: BLE001
+        log.exception("No se pudieron preparar los recordatorios")
+        return {"estado": "fallida", "error": f"{type(e).__name__}: {str(e)[:300]}"}
 
 
 def _sincronizar_kb(url: str | None, hubo_datos_nuevos: bool, fecha_corte: str) -> dict | None:

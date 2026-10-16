@@ -19,6 +19,7 @@ def main(argv=None) -> int:
     p.add_argument("--local", type=Path, help="Carpeta donde escribir los documentos (no usa AWS)")
     p.add_argument("--corte", help="Fecha de corte para --local (por defecto la última fecha con datos)")
     p.add_argument("--sin-esperar", action="store_true")
+    p.add_argument("--faq", action="store_true", help="Sincroniza la KB del paciente (preguntas frecuentes, F0010)")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if args.local:
@@ -38,9 +39,9 @@ def main(argv=None) -> int:
     if not config.usa_rds():
         print("La preparación de la KB requiere la base (HLF_DATABASE_URL o HLF_DB_SECRET_ID).", file=sys.stderr)
         return 2
-    from .proceso import ErrorPreparacion, preparar
+    from .proceso import ErrorPreparacion, preparar, preparar_faq
     try:
-        resultado = preparar(esperar=not args.sin_esperar)
+        resultado = (preparar_faq if args.faq else preparar)(esperar=not args.sin_esperar)
     except ErrorPreparacion as e:
         print(str(e), file=sys.stderr)
         return 1
