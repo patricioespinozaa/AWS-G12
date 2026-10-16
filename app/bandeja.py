@@ -45,6 +45,7 @@ from hlf_priorizacion.bandeja.datos import (
 from hlf_priorizacion.bandeja.decisiones import (
     MAX_MOTIVO,
     OPCIONES,
+    DecisionSinAuditoria,
     ErrorDecision,
     crear_decision,
     estados_del_corte,
@@ -500,6 +501,7 @@ def _formulario(raiz: Path, dc: DatosCorte, ev: Evaluacion, medico: str) -> None
             OPCIONES,
             format_func=ETIQUETA_OPCION.get,
             horizontal=True,
+            index=None,  # sin opción preseleccionada: el médico elige explícitamente
             key="detalle-decision-radio",
             disabled=sin_medico,
         )
@@ -524,6 +526,9 @@ def _formulario(raiz: Path, dc: DatosCorte, ev: Evaluacion, medico: str) -> None
             guardar = st.form_submit_button("Guardar decisión", key="detalle-decision-guardar", disabled=sin_medico)
     if not guardar or sin_medico:
         return
+    if opcion is None:
+        st.error("No se guardó: elija aceptar, ajustar o rechazar.")
+        return
     registro = dc.analisis.get(ev.id_solicitud)
     try:
         decision = crear_decision(
@@ -540,6 +545,18 @@ def _formulario(raiz: Path, dc: DatosCorte, ev: Evaluacion, medico: str) -> None
         return
     try:
         guardar_decision(raiz, decision)
+    except DecisionSinAuditoria as e:
+        _logger().error(
+            "decisión guardada sin evento de auditoría",
+            extra={"campos": {"id_solicitud": ev.id_solicitud, "id_decision": e.id_decision,
+                              "etapa": "auditoria", "tipo_error": e.tipo_error}},
+        )
+        _decisiones.clear()
+        st.warning(
+            f"La decisión quedó guardada ({e.id_decision}), pero no se pudo registrar en la auditoría. "
+            "No la vuelva a guardar; avise al equipo técnico."
+        )
+        return
     except Exception as e:
         _logger().error(
             "no se pudo guardar la decisión",

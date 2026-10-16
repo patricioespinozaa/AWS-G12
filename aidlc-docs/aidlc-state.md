@@ -61,9 +61,11 @@ Interpretación: revisar el documento de contexto de negocio (incluye una secci�
 - **Lifecycle Phase**: CONSTRUCTION
 - **Completed**: U1 — Functional Design + Code Generation (aprobados)
 - **Completed**: U2 — Functional Design + Code Generation (aprobados; correcciones aplicadas)
-- **Current Stage**: U3 — Code Generation completa (revisión APPROVED, 5 hallazgos no bloqueantes)
-- **Next Stage**: Build and Test
-- **Status**: Esperando aprobación del código de U3
+- **Completed**: U3 — Functional Design + Code Generation (aprobados)
+- **Completed**: Build and Test (aprobado)
+- **Current Stage**: Flujo AI-DLC completo para el MVP (Operations es placeholder en AI-DLC v1.0.1)
+- **Next Stage**: Ninguna en este flujo. Futuro: U4 (despliegue AWS), U5 (box), U6 (FHIR) reactivando Construction
+- **Status**: Completado
 
 ## Entorno verificado (2026-10-15)
 - Dataset presente en `data/dataset_hlf_ambulatorio/` (ignorado por git)

@@ -105,6 +105,15 @@ def crear_decision(
         raise ErrorDecision(_mensajes(e)) from e
 
 
+class DecisionSinAuditoria(ErrorPersistencia):
+    """La decisión quedó guardada, pero su evento ``decision_medica`` no se pudo escribir."""
+
+    def __init__(self, id_decision: str, tipo_error: str) -> None:
+        super().__init__(f"decisión {id_decision} guardada sin evento de auditoría: {tipo_error}")
+        self.id_decision = id_decision
+        self.tipo_error = tipo_error
+
+
 def guardar_decision(raiz: Path, decision: Decision, id_ejecucion: str = "bandeja") -> None:
     """Agrega la decisión a ``decisiones.jsonl`` y un evento ``decision_medica`` a la auditoría (B5.4, B5.5)."""
     agregadas = agregar_jsonl(
@@ -125,7 +134,8 @@ def guardar_decision(raiz: Path, decision: Decision, id_ejecucion: str = "bandej
             prioridad_final=decision.prioridad_final,
         )
     except OSError as e:
-        raise ErrorPersistencia(f"no se pudo registrar la auditoría: {type(e).__name__}") from e
+        # La decisión ya quedó en decisiones.jsonl: no es un fallo de guardado y no hay que reintentarla.
+        raise DecisionSinAuditoria(decision.id_decision, type(e).__name__) from e
     obtener_logger().info(
         "decisión médica guardada",
         extra={

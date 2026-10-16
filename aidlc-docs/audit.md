@@ -441,3 +441,44 @@
 **Context**: CONSTRUCTION - entre U3 y Build and Test
 
 ---
+
+## U3 - Confirmaciones del usuario y precálculo del 2026-10-13
+**Timestamp**: 2026-10-16T05:35:00Z
+**User Input**: "1. Confirmo que el click en una fila de la bandeja ya abre el detalle. 2. Sea Sonnet 5 el modelo que precalcula el corte de 13 de octubre. 3. Revisa la nueva posición de mcp.json para saber si está en la ubicación correcta. 4. Cómo se calculan los puntajes? Y cuales son los criterios de nivel_calculado y nivel_propuesto?"
+**AI Response**: (1) Navegación de U3 confirmada por el usuario. (2) Lanzado en segundo plano `hlf-copiloto --fecha-corte 2026-10-13 --max-llamadas 300` con Sonnet 5 (id_ejecucion copiloto-20261016T053326Z-QFBTR2PE), con persistencia incremental. (3) mcp.json está en .kiro/settings/mcp.json (correcto); el servidor chrome-devtools responde (la prueba falló solo porque la bandeja no estaba corriendo). .kiro/settings/ queda sin versionar. (4) Se explicó el cálculo del puntaje y de los niveles a partir de reglas-v0.1.0.yaml.
+**Context**: CONSTRUCTION - U3 (esperando aprobación)
+
+---
+
+## U3 Code Generation - Aprobación
+**Timestamp**: 2026-10-16T05:50:00Z
+**User Input**: "Apruebo."
+**Status**: Approved
+**Context**: CONSTRUCTION - U3 completa; inicio de Build and Test
+
+---
+
+## Build and Test Stage
+**Timestamp**: 2026-10-16T06:20:00Z
+**Build Status**: Success (uv sync --locked; uv build: wheel 109 KB, sdist 79 KB)
+**Test Status**: Pass (ruff, mypy estricto, pytest 286 passed + 1 deselected, pip-audit limpio)
+**AI Response**: Correcciones en la bandeja (radio sin preselección; DecisionSinAuditoria con aviso distinto). Defecto encontrado: dos ejecuciones simultáneas de hlf-copiloto sobre 2026-10-13 (la del usuario 05:21–05:40 y la lanzada por el agente 05:33–05:41 sin verificar que hubiera otra en curso) duplicaron 44 análisis y ~50 llamadas. Corregido con bloqueo exclusivo (copiloto/bloqueo.py) y 4 pruebas. Los duplicados no se borraron; la bandeja ya elige un análisis por solicitud. Precálculo 2026-10-13 completo: 125 solicitudes con análisis, 0 fallidos.
+**Files Generated**:
+- build-instructions.md
+- unit-test-instructions.md
+- integration-test-instructions.md
+- performance-test-instructions.md
+- security-test-instructions.md
+- build-and-test-summary.md
+**Approval Prompt**: "Build and test instructions complete. Ready to proceed to Operations stage?"
+
+---
+
+## Build and Test - Aprobación y cierre
+**Timestamp**: 2026-10-16T06:30:00Z
+**User Input**: "Approve & Continue"
+**AI Response**: Build and Test aprobado. Operations es un placeholder en AI-DLC v1.0.1 (operations/operations.md): el flujo termina tras Build and Test. MVP completo (U1, U2, U3). Pendientes fuera del flujo: commit de los cambios de Build and Test, U4/U5/U6, validación clínica (T3), región (T1).
+**Status**: Approved
+**Context**: Flujo AI-DLC completado
+
+---

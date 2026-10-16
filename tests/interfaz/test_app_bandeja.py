@@ -262,3 +262,33 @@ def test_abrir_desde_tabla_cambia_a_detalle(lote, monkeypatch) -> None:  # type:
     assert not at.exception, [e.value for e in at.exception]
     assert at.radio(key="app-pestana").value == "Detalle"
     assert at.selectbox(key="detalle-solicitud").value is not None
+
+
+def test_decision_sin_opcion_preseleccionada(lote, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """El radio no viene en "aceptar": guardar sin elegir no guarda nada."""
+    datos, salidas = lote
+    at = _app(salidas, datos, monkeypatch)
+    _abrir_detalle(at, "MED-DEMO-01", "2026-07-20", "IC-TST-00001")
+    assert at.radio(key="detalle-decision-radio").value is None
+    at.button(key="detalle-decision-guardar").click().run()
+    assert any("elija aceptar, ajustar o rechazar" in e.value for e in at.error)
+    assert not ruta_decisiones(salidas).exists()
+
+
+def test_fallo_de_auditoria_no_se_informa_como_fallo_de_guardado(lote, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Si la auditoría falla, la decisión ya quedó guardada: aviso distinto y sin pedir que se reintente."""
+    from hlf_priorizacion.auditoria.registro import RegistroAuditoria
+
+    def falla(*_a: object, **_k: object) -> None:
+        raise OSError("disco lleno")
+
+    datos, salidas = lote
+    at = _app(salidas, datos, monkeypatch)
+    _abrir_detalle(at, "MED-DEMO-01", "2026-07-20", "IC-TST-00001")
+    monkeypatch.setattr(RegistroAuditoria, "registrar", falla)
+    at.radio(key="detalle-decision-radio").set_value("aceptar")
+    at.button(key="detalle-decision-guardar").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert len(leer_decisiones(salidas)) == 1
+    assert any("quedó guardada" in w.value and "No la vuelva a guardar" in w.value for w in at.warning)
+    assert not any("No se pudo guardar" in e.value for e in at.error)

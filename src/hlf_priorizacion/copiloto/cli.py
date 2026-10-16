@@ -30,6 +30,7 @@ from hlf_priorizacion.copiloto.barrido import (
     ResumenBarrido,
     ejecutar_barrido,
 )
+from hlf_priorizacion.copiloto.bloqueo import CopilotoEnEjecucion, ejecucion_exclusiva
 from hlf_priorizacion.copiloto.cliente import ClienteBedrock, ClienteModelo, ErrorPermisos
 from hlf_priorizacion.copiloto.config import ErrorConfiguracion, ErrorModeloNoPermitido, config_desde_entorno
 from hlf_priorizacion.copiloto.fechas import ErrorFecha, cortes_a_procesar, parsear_fecha
@@ -164,7 +165,15 @@ def main(
                 }
             },
         )
-        resumen = ejecutar_barrido(cfg, config, prompt, cliente or ClienteBedrock(config), id_ejecucion)
+        with ejecucion_exclusiva(salidas, id_ejecucion):
+            resumen = ejecutar_barrido(cfg, config, prompt, cliente or ClienteBedrock(config), id_ejecucion)
+    except CopilotoEnEjecucion as e:
+        log.error("otra ejecución en curso", extra={"campos": {"tipo_error": type(e).__name__}})
+        sys.stdout.write(
+            "Ya hay otra ejecución de hlf-copiloto sobre estas salidas. Espere a que termine (o deténgala con "
+            "Ctrl+C) y vuelva a ejecutar: seguirá donde quedó.\nNo se llamó a Bedrock.\n"
+        )
+        return SALIDA_ENTRADA
     except KeyboardInterrupt:  # Ctrl+C fuera de las llamadas (antes de empezar o al escribir)
         log.warning("copiloto interrumpido", extra={"campos": {"tipo_error": "KeyboardInterrupt"}})
         sys.stdout.write(MENSAJE_REANUDAR)
