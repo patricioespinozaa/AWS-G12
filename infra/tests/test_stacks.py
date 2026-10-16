@@ -282,3 +282,28 @@ def test_asistente_cifrado_secretos_y_lambda_sin_vpc(plantillas):
     assert (esperadas <= nombres) == (entorno == "demo")
     t["frontend"].has_resource_properties("AWS::SSM::Parameter", {"Name": f"/hlf/{entorno}/api_url"})
 
+
+
+def test_voz_connect_lex_y_grabacion_solo_con_consentimiento(plantillas):
+    """F0011: solo donde se activa. Lex en es_US con voz neural; toda intención pasa por la Lambda (sin VPC);
+    Connect con flujo versionado, cola humana y grabaciones en el bucket de datos; el número no se reclama solo."""
+    entorno, t = plantillas
+    if entorno == "dev":
+        assert "voz" not in t
+        return
+    (bot,) = _recursos(t["voz"], "AWS::Lex::Bot").values()
+    (locale,) = bot["Properties"]["BotLocales"]
+    assert locale["LocaleId"] == "es_US" and locale["VoiceSettings"] == {"VoiceId": "Lupe", "Engine": "neural"}
+    assert all(i["FulfillmentCodeHook"]["Enabled"] for i in locale["Intents"])
+    assert any(i.get("ParentIntentSignature") == "AMAZON.FallbackIntent" for i in locale["Intents"])
+    (alias,) = _recursos(t["voz"], "AWS::Lex::BotAlias").values()
+    assert "LambdaArn" in json.dumps(alias["Properties"]["BotAliasLocaleSettings"])
+    (funcion,) = _recursos(t["voz"], "AWS::Lambda::Function").values() if len(
+        _recursos(t["voz"], "AWS::Lambda::Function")) == 1 else [f for f in _recursos(t["voz"], "AWS::Lambda::Function").values()
+                                                                 if f["Properties"].get("Handler") == "lambda_voz.handler"]
+    assert "VpcConfig" not in funcion["Properties"]
+    (flujo,) = _recursos(t["voz"], "AWS::Connect::ContactFlow").values()
+    assert "Fn::Sub" in json.dumps(flujo["Properties"]["Content"])            # alias de Lex y cola sustituidos
+    t["voz"].has_resource_properties("AWS::Connect::InstanceStorageConfig", {"ResourceType": "CALL_RECORDINGS"})
+    assert _recursos(t["voz"], "AWS::Connect::Queue") and _recursos(t["voz"], "AWS::Connect::IntegrationAssociation")
+    assert not _recursos(t["voz"], "AWS::Connect::PhoneNumber")               # tiene costo: se activa a propósito
