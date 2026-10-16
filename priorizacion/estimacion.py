@@ -2,7 +2,8 @@
 
 Para cada especialidad:
 1. La cola se ordena por prioridad VIGENTE (la decidida por la Administradora; nunca la propuesta del motor), luego
-   por fecha de ingreso e ID. Esa es la posición vigente.
+   por puntaje vigente (el del motor más el ajuste de la Administradora, F0007), fecha de ingreso e ID. Esa es la
+   posición vigente.
 2. Se cuentan las atenciones (citas con asistencia) de cada una de las 8 semanas previas al corte.
 3. Rango de días = posición ÷ atenciones por día, con la semana p75 (cota optimista) y la p25 (cota pesimista).
    Si un percentil es cero (pocas atenciones), se usan la mejor y la peor semana con atenciones.
@@ -48,7 +49,10 @@ def _confianza(semanas: list[int]) -> str:
 
 
 def estimar(cola: pd.DataFrame, citas: pd.DataFrame, corte: date) -> pd.DataFrame:
-    """`cola`: solicitudes activas al corte con id_solicitud, especialidad, prioridad_vigente y fecha_ingreso."""
+    """`cola`: solicitudes activas al corte con id_solicitud, especialidad, prioridad_vigente y fecha_ingreso
+    (y puntaje_vigente, si se tiene: sin él, el orden dentro del nivel es el de llegada)."""
+    if "puntaje_vigente" not in cola:
+        cola = cola.assign(puntaje_vigente=0.0)
     filas = []
     for especialidad, grupo in cola.groupby("especialidad"):
         semanas = atenciones_por_semana(citas, especialidad, corte)
@@ -59,8 +63,8 @@ def estimar(cola: pd.DataFrame, citas: pd.DataFrame, corte: date) -> pd.DataFram
         # Con pocas atenciones los percentiles pueden ser 0: se usan la mejor y la peor semana con atenciones
         pesimista = (p25 if p25 > 0 else min(con_atenciones)) / 7
         optimista = max((p75 if p75 > 0 else max(con_atenciones)) / 7, pesimista)
-        ordenada = grupo.assign(_nivel=-grupo["prioridad_vigente"].map(ORDEN_NIVEL)) \
-            .sort_values(["_nivel", "fecha_ingreso", "id_solicitud"])
+        ordenada = grupo.assign(_nivel=-grupo["prioridad_vigente"].map(ORDEN_NIVEL), _puntaje=-grupo["puntaje_vigente"]) \
+            .sort_values(["_nivel", "_puntaje", "fecha_ingreso", "id_solicitud"])
         total, confianza = len(ordenada), _confianza(semanas)
         for posicion, f in enumerate(ordenada.itertuples(index=False), start=1):
             dias_min = math.ceil(posicion / optimista)

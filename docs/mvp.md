@@ -158,4 +158,4 @@ El MVP corre local; cada pieza tiene un equivalente directo en AWS.
 - Sin texto libre: no se pueden medir los controles visibles ni probar la extracción con LLM sobre notas reales.
 - La agenda usa los cupos libres registrados; `citaciones` y `agenda_box` casi no cruzan (`docs/datos.md`).
 - La explicación con Bedrock está implementada pero no se probó contra el servicio (faltan credenciales en este entorno). Sin ellas, la app usa la plantilla.
-- Sin autenticación: la maqueta registra el nombre que se escribe en el formulario.
+- Autenticación (F0007): en AWS solo entra la Administradora, con login de Cognito. En modo local corre sin login y lo avisa en la barra lateral.
