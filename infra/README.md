@@ -12,7 +12,8 @@ infra/
 │   ├── datos.py           bucket de datos, workgroup de Athena, RDS opcional
 │   ├── identidad.py       Cognito: User Pool de la Administradora, grupo administracion, Hosted UI (F0007)
 │   ├── ia.py              Bedrock: guardrail y política de invocación del modelo (F0008)
-│   ├── consulta.py        Knowledge Base del equipo clínico en S3 Vectors y permisos de consulta (F0009)
+│   ├── consulta.py        Knowledge Bases (equipo clínico y preguntas del paciente) en S3 Vectors (F0009, F0010)
+│   ├── asistente.py       KMS de teléfonos, secretos, tema SNS y Lambda de WhatsApp (F0010)
 │   ├── backend.py         ECS Fargate (imagen docker/backend), ALB interno
 │   ├── nocturno.py        consolidación nocturna: EventBridge Scheduler → tarea ECS (solo con RDS)
 │   └── frontend.py        bucket web, CloudFront (S3 con OAC + /api/* por VPC origin), app client de Cognito
@@ -27,6 +28,7 @@ infra/
 | `Hlf<Entorno>-Identidad` | User Pool, grupo `administracion`, dominio del login | — |
 | `Hlf<Entorno>-Ia` | Guardrail de Bedrock (versión fija) y política IAM de invocación del modelo | — |
 | `Hlf<Entorno>-Consulta` | Bucket e índice de S3 Vectors, Knowledge Base (Titan V2), fuente de datos `kb/equipo/`, políticas de consulta (KB y Athena) y de preparación | Datos |
+| `Hlf<Entorno>-Asistente` | Clave KMS de teléfonos, pepper del HMAC y secreto de servicio (Secrets Manager), tema SNS de WhatsApp entrante y su Lambda | — |
 | `Hlf<Entorno>-Backend` | Cluster ECS, tarea, servicio, ALB interno, logs; en demo, la tarea nocturna y su programación | Red, Datos |
 | `Hlf<Entorno>-Frontend` | Bucket web, CloudFront, función SPA, regla CloudFront → ALB, app client de Cognito y parámetro SSM `/hlf/<entorno>/cognito` | Red, Backend, Identidad |
 

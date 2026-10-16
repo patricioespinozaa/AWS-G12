@@ -22,6 +22,7 @@ from constructs import Construct
 from config.entornos import Entorno
 
 from .datos import DatosStack
+from .asistente import AsistenteStack
 from .consulta import ConsultaStack
 from .ia import IaStack
 from .nocturno import ConsolidacionNocturna
@@ -36,7 +37,8 @@ GRACIA_ARRANQUE = Duration.minutes(6)
 
 class BackendStack(Stack):
     def __init__(self, scope: Construct, id: str, *, entorno: Entorno, red: RedStack, datos: DatosStack,
-                 ia: IaStack | None = None, consulta: ConsultaStack | None = None, **kwargs) -> None:
+                 ia: IaStack | None = None, consulta: ConsultaStack | None = None,
+                 asistente: AsistenteStack | None = None, **kwargs) -> None:
         super().__init__(scope, id, description="HLF priorización: backend (ECS Fargate + ALB interno)", **kwargs)
 
         cluster = ecs.Cluster(self, "Cluster", vpc=red.vpc, container_insights_v2=ecs.ContainerInsights.ENABLED)
@@ -77,7 +79,20 @@ class BackendStack(Stack):
         con_consulta = entorno.llm_proveedor == "bedrock" and consulta is not None and datos.rds is not None
         if con_consulta:
             variables.update(HLF_KB_ID=consulta.kb.attr_knowledge_base_id,
-                             HLF_KB_DATA_SOURCE_ID=consulta.fuente.attr_data_source_id)
+                             HLF_KB_DATA_SOURCE_ID=consulta.fuente.attr_data_source_id,
+                             HLF_KB_PACIENTE_ID=consulta.kb_paciente.attr_knowledge_base_id,
+                             HLF_KB_PACIENTE_DATA_SOURCE_ID=consulta.fuente_paciente.attr_data_source_id)
+        # Asistente del paciente (F0010): teléfonos cifrados con KMS, HMAC con pepper y entrada de WhatsApp
+        con_asistente = con_consulta and asistente is not None
+        if con_asistente:
+            variables.update(HLF_KMS_KEY_ID=asistente.clave.key_arn, HLF_HMAC_SECRET_ID=asistente.pepper.secret_arn,
+                             HLF_SERVICIO_SECRET_ID=asistente.secreto_servicio.secret_arn,
+                             HLF_ASISTENTE_MODELO_ID=entorno.asistente_modelo_id,
+                             HLF_ESTIMACION_PUBLICABLE="1" if entorno.estimacion_publicable else "0")
+            if entorno.whatsapp_origen:
+                variables["HLF_WHATSAPP_ORIGEN"] = entorno.whatsapp_origen
+            if entorno.sms_origen:
+                variables["HLF_SMS_ORIGEN"] = entorno.sms_origen
         if datos.rds is not None:
             # db/conexion.py arma la conexión con el secreto de Secrets Manager; la clave nunca va en variables
             variables.update(HLF_DB_HOST=datos.rds.db_instance_endpoint_address,
@@ -97,6 +112,8 @@ class BackendStack(Stack):
         datos.bucket.grant_read(tarea.task_role, f"{entorno.prefijo_s3}/*")
         if entorno.llm_proveedor == "bedrock" and ia is not None:
             tarea.task_role.add_managed_policy(ia.politica)
+        if con_asistente:
+            asistente.otorgar_a(tarea.task_role, enviar_sms=bool(entorno.sms_origen))
         if con_consulta:
             tarea.task_role.add_managed_policy(consulta.politica_consulta)
             tarea.task_role.add_managed_policy(consulta.politica_preparacion)   # botón "Sincronizar" de la vista
@@ -158,6 +175,8 @@ class BackendStack(Stack):
             CfnOutput(self, "SalidaTareaNocturna", value=self.nocturno.tarea.task_definition_arn)
             if con_consulta:                               # la noche regenera la KB cuando entran datos nuevos
                 self.nocturno.tarea.task_role.add_managed_policy(consulta.politica_preparacion)
+            if con_asistente:                              # y envía los recordatorios de cita (F0010)
+                asistente.otorgar_a(self.nocturno.tarea.task_role, enviar_whatsapp=bool(entorno.whatsapp_origen))
         CfnOutput(self, "SalidaCluster", value=cluster.cluster_name)
         CfnOutput(self, "SalidaServicio", value=servicio.service_name)
         CfnOutput(self, "SalidaDefinicionTarea", value=tarea.task_definition_arn)

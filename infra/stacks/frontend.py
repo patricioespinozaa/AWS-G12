@@ -48,7 +48,7 @@ RETORNOS_LOCALES = ["http://localhost:5173/", "http://localhost:8000/"]
 
 class FrontendStack(Stack):
     def __init__(self, scope: Construct, id: str, *, entorno: Entorno, red: RedStack, backend: BackendStack,
-                 identidad: IdentidadStack, dist: Path, **kwargs) -> None:
+                 identidad: IdentidadStack, dist: Path, parametro_api: str | None = None, **kwargs) -> None:
         super().__init__(scope, id, description="HLF priorización: frontend (S3 + CloudFront)", **kwargs)
 
         bucket = s3.Bucket(
@@ -179,6 +179,10 @@ class FrontendStack(Stack):
                 "region": self.region, "user_pool_id": identidad.user_pool.user_pool_id,
                 "client_id": cliente.user_pool_client_id, "dominio": identidad.url_dominio}),
         )
+
+        if parametro_api:                  # la Lambda de WhatsApp (F0010) llama a la API por esta URL
+            ssm.StringParameter(self, "UrlApi", parameter_name=parametro_api, description="URL pública de la app (F0010)",
+                                string_value=f"https://{self.distribucion.distribution_domain_name}")
 
         CfnOutput(self, "Url", value=f"https://{self.distribucion.distribution_domain_name}",
                   description="URL de la app")
