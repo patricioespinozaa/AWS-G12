@@ -44,6 +44,11 @@ class RevisionIn(BaseModel):
     estado: Literal["validada", "rechazada"]
     nota: str = ""
     corte: str | None = None
+    # F0012: valores que confirma la persona al validar un examen leído con IA (la propuesta nunca se usa sola)
+    tipo_medicion: str | None = None
+    valor: float | None = None
+    fecha_examen: str | None = None
+    lugar: str | None = None
 
 
 @router.get("/api/canal/{id_paciente}")
@@ -128,8 +133,21 @@ def revisar_evidencia(id_evidencia: str, rev: RevisionIn, quien: Persona = Depen
     fila = ev[ev["id_evidencia"] == id_evidencia]
     if fila.empty:
         raise HTTPException(404, f"No existe la evidencia {id_evidencia}")
+    valores = None
+    if rev.estado == "validada":
+        if rev.tipo_medicion is not None and rev.tipo_medicion not in R.RANGOS_NORMALES:
+            raise HTTPException(422, f"Tipo de examen desconocido: {rev.tipo_medicion}")
+        fecha_examen = date.fromisoformat(rev.fecha_examen) if rev.fecha_examen else None
+        valores = {"tipo_medicion": rev.tipo_medicion, "valor": rev.valor, "fecha_examen": fecha_examen,
+                   "lugar": rev.lugar}
+        actual = fila.iloc[0]
+        faltan = [c for c in ("tipo_medicion", "valor", "fecha_examen")
+                  if valores[c] is None and (actual.get(c) is None or actual.get(c) != actual.get(c))]
+        if faltan:
+            raise HTTPException(422, "Para validar, confirma: " + ", ".join(faltan))
     return _antes_despues(fila.iloc[0]["id_paciente"], E.fecha(rev.corte),
-                          lambda: E.registro.revisar_evidencia(id_evidencia, rev.estado, quien.id_usuario, rev.nota))
+                          lambda: E.registro.revisar_evidencia(id_evidencia, rev.estado, quien.id_usuario, rev.nota,
+                                                               valores))
 
 
 @router.post("/api/canal/mensajes/{id_mensaje}/revision")

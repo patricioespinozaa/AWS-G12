@@ -17,7 +17,7 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 | [F0009](F0009-consulta-lenguaje-natural.md) | Consulta en lenguaje natural del equipo clínico | Implementado | F0005, F0007, F0008 | Bedrock Knowledge Bases, S3 Vectors, Athena, Lambda |
 | [F0010](F0010-asistente-whatsapp.md) | Asistente del paciente por WhatsApp | Implementado | F0005, F0006, F0008 | End User Messaging Social, SNS, Lambda, Bedrock |
 | [F0011](F0011-asistente-voz.md) | Asistente del paciente por teléfono (voz) | Implementado | F0010 | Amazon Connect, Lex V2, Polly, Lambda |
-| [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos: subida a S3 y lectura asistida | Plan | F0005, F0010 | S3, Textract, Bedrock |
+| [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos: subida a S3 y lectura asistida | Implementado | F0005, F0010 | S3, Textract, Bedrock |
 | [F0013](F0013-observabilidad-seguridad-costos.md) | Observabilidad, seguridad y control de costos | Plan | F0004 (se amplía con cada feature) | CloudWatch, WAF, CloudTrail, Budgets, AWS Backup |
 
 Los pendientes que dejaron las features ya implementadas, y las preguntas abiertas para el HLF, están en [pendientes.md](pendientes.md).
