@@ -5,6 +5,7 @@ import { useApp } from "./contexto";
 import Agenda from "./paginas/Agenda";
 import Bandeja from "./paginas/Bandeja";
 import Canal from "./paginas/Canal";
+import Consulta from "./paginas/Consulta";
 import Cargas from "./paginas/Cargas";
 import Ficha from "./paginas/Ficha";
 import Kpis from "./paginas/Kpis";
@@ -82,6 +83,7 @@ export default function App() {
           <NavLink to="/bandeja">📋 Bandeja priorizada</NavLink>
           <NavLink to="/ficha">🩺 Ficha del paciente</NavLink>
           <NavLink to="/agenda">🗓️ Agenda y box</NavLink>
+          <NavLink to="/consulta">🔎 Consulta</NavLink>
         </nav>
         <nav className="nav-grupo">
           <span>Paciente (maqueta)</span>
@@ -123,6 +125,7 @@ export default function App() {
               <Route path="/ficha" element={<Ficha />} />
               <Route path="/ficha/:idSolicitud" element={<Ficha />} />
               <Route path="/agenda" element={<Agenda />} />
+              <Route path="/consulta" element={<Consulta />} />
               <Route path="/canal" element={<Canal />} />
               <Route path="/kpis" element={<Kpis />} />
               <Route path="/nocturno" element={<Nocturno />} />

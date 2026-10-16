@@ -27,6 +27,9 @@ BEDROCK_REGION = os.environ.get("BEDROCK_REGION") or AWS_REGION
 BEDROCK_MAX_TOKENS = int(os.environ.get("BEDROCK_MAX_TOKENS", "900"))       # 3 a 5 oraciones, con holgura
 BEDROCK_GUARDRAIL_ID = os.environ.get("BEDROCK_GUARDRAIL_ID", "")
 BEDROCK_GUARDRAIL_VERSION = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
+# Knowledge Base del equipo clínico (F0009): la crea el stack consulta; la API y la preparación la usan
+KB_ID = os.environ.get("HLF_KB_ID", "")
+KB_DATA_SOURCE_ID = os.environ.get("HLF_KB_DATA_SOURCE_ID", "")
 
 # Base de datos (F0005). Con HLF_DATABASE_URL o HLF_DB_SECRET_ID (+ HLF_DB_HOST) la app lee raw de RDS y guarda
 # en los esquemas priorizacion y canal. Sin ellas, modo local: CSV + SQLite (respaldo de la demo).

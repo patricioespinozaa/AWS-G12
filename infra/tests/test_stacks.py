@@ -235,3 +235,25 @@ def test_ia_solo_bedrock_con_guardrail_y_minimo_privilegio(plantillas):
     else:
         assert variables["LLM_PROVEEDOR"] == "" and "BEDROCK_GUARDRAIL_ID" not in variables
         assert "PoliticaInvocacion" not in roles and "HlfDev-Ia" not in roles
+
+
+def test_consulta_kb_sobre_s3_vectors_y_permisos_de_solo_lectura(plantillas):
+    """F0009: KB del equipo clínico en S3 Vectors con Titan V2; Athena solo con el workgroup del entorno; la API
+    recibe la KB solo donde hay Bedrock y RDS."""
+    entorno, t = plantillas
+    (indice,) = _recursos(t["consulta"], "AWS::S3Vectors::Index").values()
+    i = indice["Properties"]
+    assert i["Dimension"] == 1024 and i["DistanceMetric"] == "cosine"
+    assert set(i["MetadataConfiguration"]["NonFilterableMetadataKeys"]) == {"AMAZON_BEDROCK_TEXT", "AMAZON_BEDROCK_METADATA"}
+    (kb,) = _recursos(t["consulta"], "AWS::Bedrock::KnowledgeBase").values()
+    assert kb["Properties"]["StorageConfiguration"]["Type"] == "S3_VECTORS"
+    assert "titan-embed-text-v2" in json.dumps(kb["Properties"]["KnowledgeBaseConfiguration"])
+    (fuente,) = _recursos(t["consulta"], "AWS::Bedrock::DataSource").values()
+    assert fuente["Properties"]["DataSourceConfiguration"]["S3Configuration"]["InclusionPrefixes"] == ["hlf/kb/equipo/"]
+    politicas = json.dumps(t["consulta"].find_resources("AWS::IAM::ManagedPolicy"))
+    assert "athena:StartQueryExecution" in politicas and f"workgroup/hlf-priorizacion-{entorno}" in politicas
+    assert '"athena:*"' not in politicas and '"glue:*"' not in politicas and "s3:DeleteObject" not in politicas
+    tarea = next(x for x in _recursos(t["backend"], "AWS::ECS::TaskDefinition").values()
+                 if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
+    variables = {v["Name"] for v in tarea["Properties"]["ContainerDefinitions"][0]["Environment"]}
+    assert ({"HLF_KB_ID", "HLF_KB_DATA_SOURCE_ID"} <= variables) == (entorno == "demo")
