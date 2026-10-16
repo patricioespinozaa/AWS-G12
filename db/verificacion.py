@@ -75,9 +75,9 @@ def verificar(conn: psycopg.Connection) -> list[Chequeo]:
 ESTRUCTURA = {
     "priorizacion": {
         "tablas": ("usuario", "reloj", "estado_app", "corrida_nocturna", "serie_nocturna", "propuesta_prioridad", "factor_propuesta",
-                   "decision_clinica", "cita_agendada", "estimacion_espera"),
+                   "decision_clinica", "cita_agendada", "estimacion_espera", "version_reglas"),
         "vistas": ("v_prioridad_vigente",),
-        "solo_insercion": ("decision_clinica",),
+        "solo_insercion": ("decision_clinica", "version_reglas"),
     },
     "canal": {
         "tablas": ("intencion", "contacto_paciente", "consentimiento", "conversacion", "verificacion_identidad",
