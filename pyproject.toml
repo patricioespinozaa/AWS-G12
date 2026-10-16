@@ -1,0 +1,69 @@
+[project]
+name = "hlf-priorizacion"
+version = "0.1.0"
+description = "Núcleo de datos y motor de reglas para la priorización clínica dinámica del HLF (U1)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "boto3==1.43.114",
+    "botocore==1.43.114",
+    "pyarrow==26.0.0",
+    "pydantic==2.14.1",
+    "pyyaml==6.0.3",
+    "streamlit==1.66.0",
+]
+
+[project.scripts]
+hlf-lote = "hlf_priorizacion.lote:main"
+hlf-copiloto = "hlf_priorizacion.copiloto.cli:main"
+
+[build-system]
+requires = ["uv_build==0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "hlf_priorizacion"
+module-root = "src"
+
+[dependency-groups]
+dev = [
+    "boto3-stubs[bedrock-runtime]==1.43.114",
+    "hypothesis==6.170.0",
+    "mypy==2.4.0",
+    "pip-audit==2.10.1",
+    "pyarrow-stubs==20.0.0.20260819",
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+    "statsmodels==0.15.0",
+    "types-pyyaml==6.0.12.20260906",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+# S101: assert en pruebas; RUF001-003: caracteres del español en textos.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hlf_priorizacion", "estrategias", "ayudantes"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-ra --strict-markers -m \"not bedrock\""
+markers = [
+    "bedrock: llama a Amazon Bedrock real (consume tokens); se excluye por defecto, correr con `pytest -m bedrock`",
+]

@@ -40,6 +40,7 @@ Consecuencias para el código:
 | `docs/casos-ejemplo.md` | Seis pacientes de referencia, uno por patrón de evolución, para tests y demo |
 | `docs/kpis.md` | Métricas de éxito y cómo calcularlas |
 | `docs/enfoque.md` | Propuesta de arquitectura y del puntaje de priorización |
+| `docs/contexto-tecnico.md` | Diseño técnico detallado: servicios AWS por capa, contrato de datos, motor de reglas, copiloto IA, auditoría y FHIR, seguridad, resiliencia, pruebas y temas abiertos |
 | `docs/datasets-externos.md` | Datasets públicos de síntomas, enfermedades y severidad |
 | `docs/glosario.md` | Siglas y términos del sistema de salud chileno |
 
@@ -53,4 +54,11 @@ Leer `docs/contexto.md` y `docs/datos.md` antes de escribir código que toque da
 
 ## Estado
 
-Stack, comandos de instalación y de ejecución: **por definir**. Actualizar esta sección cuando existan.
+- **Stack de referencia:** definido en la sección 0 de `docs/contexto-tecnico.md` (Python 3.12, AWS SAM, Step Functions + Lambda + Glue, S3 + Athena + DynamoDB, Bedrock, API Gateway + Cognito, React). Para el MVP solo está implementada U1 (local, sin AWS).
+- **Región AWS:** abierta (tema T1 de `docs/contexto-tecnico.md`); condiciona la capa FHIR y los modelos de Bedrock.
+- **Código implementado:** U1 (núcleo de datos y motor de reglas), U2 (copiloto IA en modo barrido, `src/hlf_priorizacion/copiloto/`) y U3 (bandeja local, `src/hlf_priorizacion/bandeja/` y `app/`) en `src/hlf_priorizacion/`, con pruebas en `tests/`. Resumen en `aidlc-docs/construction/u1-nucleo-motor/code/resumen.md`.
+- **Instalación:** `uv sync` (Python 3.12; versiones exactas en `pyproject.toml` y `uv.lock`).
+- **Ejecución del lote:** `uv run hlf-lote --fecha-corte AAAA-MM-DD [--datos data/dataset_hlf_ambulatorio] [--salidas salidas] [--reglas RUTA]`. Las salidas van a `salidas/` (ignorado por git).
+- **Copiloto IA (U2, modo barrido):** `uv run hlf-copiloto (--fecha-corte AAAA-MM-DD | --desde AAAA-MM-DD --hasta AAAA-MM-DD) [--forzar] [--max-llamadas N]`. Usa Bedrock (`us.anthropic.claude-sonnet-5` por defecto, `HLF_BEDROCK_MODEL_ID` para cambiarlo) con la cadena estándar de credenciales; requiere las salidas de `hlf-lote` de cada fecha. Resultados en `salidas/analisis/`. Ctrl+C es seguro (exit 130): cada solicitud se guarda apenas termina y volver a ejecutar el mismo comando sigue con el resto. Resumen en `aidlc-docs/construction/u2-copiloto/code/resumen.md`. La prueba real se corre con `uv run pytest -m bedrock -s` (excluida por defecto).
+- **Bandeja (U3, demo local en Streamlit):** `. .\scripts\entorno-demo.ps1` y `uv run streamlit run app/bandeja.py` (solo `127.0.0.1`, sin login, sin telemetría). Lógica en `src/hlf_priorizacion/bandeja/` (`datos`, `filas`, `cambios`, `decisiones`); `app/bandeja.py` solo presenta. Solo lectura sobre `salidas/` (nunca corre el lote ni el copiloto ni llama a Bedrock); escribe únicamente `salidas/decisiones/decisiones.jsonl` (solo agregar) y el evento `decision_medica`. Rutas configurables con `HLF_SALIDAS` y `HLF_DATOS`. Recorrido de la demo: IC-HLF-00002 baja el 2026-07-19 → crítica el 2026-07-20 con EV-000004 y BR_EVENTO_GRAVE_30D en "¿Qué cambió?", detalle con análisis, decisión "aceptar" con "Dra. Demo Uno"; IC-HLF-00349 (2026-07-19) con advertencia de equidad. Resumen en `aidlc-docs/construction/u3-bandeja/code/resumen.md`.
+- **Pruebas y controles:** `uv run pytest` (perfil Hypothesis `ci` por defecto; `HYPOTHESIS_PROFILE=dev` para explorar), `uv run ruff check`, `uv run mypy src`, `uv run pip-audit`.

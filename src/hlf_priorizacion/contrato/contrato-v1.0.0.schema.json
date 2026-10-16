@@ -1,0 +1,360 @@
+{
+  "$defs": {
+    "CitaCruda": {
+      "additionalProperties": false,
+      "properties": {
+        "especialidad": {
+          "minLength": 1,
+          "title": "Especialidad",
+          "type": "string"
+        },
+        "estado_cita": {
+          "enum": [
+            "asistio",
+            "no_asistio",
+            "reprogramo",
+            "cancelo"
+          ],
+          "title": "Estado Cita",
+          "type": "string"
+        },
+        "fecha_cita": {
+          "format": "date",
+          "title": "Fecha Cita",
+          "type": "string"
+        },
+        "id_box": {
+          "pattern": "^BOX-\\d{2}$",
+          "title": "Id Box",
+          "type": "string"
+        },
+        "id_cita": {
+          "pattern": "^CT-\\d{6}$",
+          "title": "Id Cita",
+          "type": "string"
+        },
+        "minutos_atencion_real": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minutos Atencion Real"
+        }
+      },
+      "required": [
+        "id_cita",
+        "id_box",
+        "fecha_cita",
+        "especialidad",
+        "estado_cita"
+      ],
+      "title": "CitaCruda",
+      "type": "object"
+    },
+    "EventoCrudo": {
+      "additionalProperties": false,
+      "properties": {
+        "detalle": {
+          "title": "Detalle",
+          "type": "string"
+        },
+        "fecha_evento": {
+          "format": "date",
+          "title": "Fecha Evento",
+          "type": "string"
+        },
+        "id_evento": {
+          "pattern": "^EV-\\d{6}$",
+          "title": "Id Evento",
+          "type": "string"
+        },
+        "severidad": {
+          "enum": [
+            "leve",
+            "moderada",
+            "grave"
+          ],
+          "title": "Severidad",
+          "type": "string"
+        },
+        "subtipo": {
+          "minLength": 1,
+          "title": "Subtipo",
+          "type": "string"
+        },
+        "tipo_evento": {
+          "enum": [
+            "visita_urgencia",
+            "hospitalizacion",
+            "examen_alterado",
+            "cambio_farmaco",
+            "control_aps"
+          ],
+          "title": "Tipo Evento",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id_evento",
+        "fecha_evento",
+        "tipo_evento",
+        "subtipo",
+        "severidad",
+        "detalle"
+      ],
+      "title": "EventoCrudo",
+      "type": "object"
+    },
+    "MedicionCruda": {
+      "additionalProperties": false,
+      "properties": {
+        "fecha_medicion": {
+          "format": "date",
+          "title": "Fecha Medicion",
+          "type": "string"
+        },
+        "fuera_de_rango": {
+          "title": "Fuera De Rango",
+          "type": "boolean"
+        },
+        "tipo_medicion": {
+          "enum": [
+            "presion_sistolica",
+            "presion_diastolica",
+            "glicemia",
+            "HbA1c",
+            "saturacion_o2",
+            "peak_flow",
+            "escala_dolor_eva",
+            "PHQ9"
+          ],
+          "title": "Tipo Medicion",
+          "type": "string"
+        },
+        "unidad": {
+          "title": "Unidad",
+          "type": "string"
+        },
+        "valor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Valor"
+        }
+      },
+      "required": [
+        "fecha_medicion",
+        "tipo_medicion",
+        "valor",
+        "unidad",
+        "fuera_de_rango"
+      ],
+      "title": "MedicionCruda",
+      "type": "object"
+    },
+    "PacienteCrudo": {
+      "additionalProperties": false,
+      "properties": {
+        "comuna": {
+          "title": "Comuna",
+          "type": "string"
+        },
+        "edad": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "Edad",
+          "type": "integer"
+        },
+        "fallecido": {
+          "title": "Fallecido",
+          "type": "boolean"
+        },
+        "fecha_defuncion": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fecha Defuncion"
+        },
+        "nivel_socioeconomico": {
+          "title": "Nivel Socioeconomico",
+          "type": "string"
+        },
+        "nombre_fantasia": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nombre Fantasia"
+        },
+        "prevision": {
+          "title": "Prevision",
+          "type": "string"
+        },
+        "sexo": {
+          "minLength": 1,
+          "title": "Sexo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "edad",
+        "sexo",
+        "comuna",
+        "prevision",
+        "nivel_socioeconomico",
+        "fallecido"
+      ],
+      "title": "PacienteCrudo",
+      "type": "object"
+    },
+    "Solicitud": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostico_cie10": {
+          "title": "Diagnostico Cie10",
+          "type": "string"
+        },
+        "diagnostico_texto": {
+          "title": "Diagnostico Texto",
+          "type": "string"
+        },
+        "especialidad": {
+          "minLength": 1,
+          "title": "Especialidad",
+          "type": "string"
+        },
+        "estado": {
+          "enum": [
+            "en_espera",
+            "atendido",
+            "fallecido",
+            "citado",
+            "egresado"
+          ],
+          "title": "Estado",
+          "type": "string"
+        },
+        "fecha_ingreso_lista": {
+          "format": "date",
+          "title": "Fecha Ingreso Lista",
+          "type": "string"
+        },
+        "id_solicitud": {
+          "pattern": "^IC-[A-Z0-9]+-\\d{5}$",
+          "title": "Id Solicitud",
+          "type": "string"
+        },
+        "origen_derivacion": {
+          "title": "Origen Derivacion",
+          "type": "string"
+        },
+        "prioridad_inicial": {
+          "enum": [
+            "alta",
+            "media",
+            "baja"
+          ],
+          "title": "Prioridad Inicial",
+          "type": "string"
+        },
+        "sub_especialidad": {
+          "title": "Sub Especialidad",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id_solicitud",
+        "especialidad",
+        "sub_especialidad",
+        "diagnostico_cie10",
+        "diagnostico_texto",
+        "prioridad_inicial",
+        "fecha_ingreso_lista",
+        "origen_derivacion",
+        "estado"
+      ],
+      "title": "Solicitud",
+      "type": "object"
+    }
+  },
+  "$id": "urn:hlf-priorizacion:contrato-v1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Perfil tal como llega. ``lista_espera`` puede ser un objeto (dataset actual) o una lista.",
+  "properties": {
+    "citaciones": {
+      "items": {
+        "$ref": "#/$defs/CitaCruda"
+      },
+      "title": "Citaciones",
+      "type": "array"
+    },
+    "eventos_clinicos": {
+      "items": {
+        "$ref": "#/$defs/EventoCrudo"
+      },
+      "title": "Eventos Clinicos",
+      "type": "array"
+    },
+    "id_paciente": {
+      "pattern": "^PAC-[A-Z0-9]+-\\d{5}$",
+      "title": "Id Paciente",
+      "type": "string"
+    },
+    "lista_espera": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Solicitud"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/Solicitud"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      ],
+      "title": "Lista Espera"
+    },
+    "mediciones": {
+      "items": {
+        "$ref": "#/$defs/MedicionCruda"
+      },
+      "title": "Mediciones",
+      "type": "array"
+    },
+    "paciente": {
+      "$ref": "#/$defs/PacienteCrudo"
+    }
+  },
+  "required": [
+    "id_paciente",
+    "paciente",
+    "lista_espera"
+  ],
+  "title": "PerfilCrudo",
+  "type": "object"
+}

@@ -1,0 +1,51 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "label": "Acronym plurals leak",
+      "blocking": true,
+      "confidence": "confirmed",
+      "detail": "\"Afiliados FONASAs del sector.\" and \"Pacientes con NSEs distintos.\" pass rule 1. Use fonasas?, nses? and gses? (like the existing isapres?)."
+    },
+    {
+      "id": 2,
+      "label": "\"socioeconomía\" leaks",
+      "blocking": true,
+      "confidence": "confirmed",
+      "detail": "\"La socioeconomía familiar es precaria.\" passes because the stem is socio ?economic\\w*. Use socio ?econom\\w*."
+    },
+    {
+      "id": 3,
+      "label": "Dotted acronyms other than N.S.E. leak",
+      "blocking": true,
+      "confidence": "confirmed",
+      "detail": "\"Afiliado a F.O.N.A.S.A.\" and \"Afiliado a I.S.A.P.R.E.\" pass (normalized to 'f o n a s a' / 'i s a p r e'). Join runs of single-letter tokens in normalizar() (or test a second joined form); then n ?s ?e can become nses?."
+    },
+    {
+      "id": 4,
+      "label": "n ?s ?e rejects \"n° se\"",
+      "blocking": false,
+      "confidence": "confirmed",
+      "detail": "\"Cita n° se reprogramó.\" is rejected as nivel_socioeconomico (fail-closed false positive). Fixed by finding 3's single-letter join plus nses?; add the phrase as a negative example."
+    },
+    {
+      "id": 5,
+      "label": "\"En previsión de\" rejects",
+      "blocking": false,
+      "confidence": "likely",
+      "detail": "The 'anticipating' sense of previsión is common clinical prose and is rejected (fail-closed, costs a retry). Accept it, or add a prompt line in a NEW prompt version; do not edit v1.2.0 in place."
+    }
+  ],
+  "checks": {
+    "gates": "ruff OK; mypy OK (39 files); pytest 223 passed, 1 deselected (matches resumen.md); pip-audit exit 0",
+    "no_negation_logic": "confirmed",
+    "single_module_constant": "confirmed (EQUIDAD_TERMINOS: Final)",
+    "rule2_mark_outside_model_fields": "confirmed (RegistroAnalisis.revision_equidad, via leer_analisis())",
+    "logs_no_sentence_text": "confirmed (analisis_ia carries len(revision_equidad))",
+    "prompt_hashes": "v1.0.0 (74) and v1.1.0 (21) match saved huella_prompt; default copiloto-v1.2.0",
+    "saved_analyses_untouched": "confirmed (SHA-256 of all salidas/analisis files identical before/after)",
+    "adversarial_rule1": "22 new phrasings, 17 rejected, 5 leaked"
+  },
+  "reviewDoc": "c:\\Users\\LoG\\Desktop\\Priorizacion\\AWS-G12\\aidlc-docs\\construction\\u2-copiloto\\code\\review-equidad.md"
+}

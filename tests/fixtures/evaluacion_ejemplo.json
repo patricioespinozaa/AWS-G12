@@ -1,0 +1,103 @@
+{
+  "id_solicitud": "IC-HLF-00002",
+  "fecha_corte": "2026-08-10",
+  "version_reglas": "reglas-v0.1.0",
+  "huella_contexto": "sha256:4af9cbf5a8b8e8684410c42a644fd6e1629d3000bd6ada7d6e4d5c458331dd9f",
+  "prioridad_inicial": "baja",
+  "puntaje": 75.05,
+  "nivel_calculado": "alta",
+  "nivel_propuesto": "critica",
+  "tipo_resultado": "priorizacion",
+  "codigo_exclusion": null,
+  "banderas": [
+    {
+      "codigo": "BR_EVENTO_GRAVE_30D",
+      "ids_registro": [
+        "EV-000004",
+        "EV-000005"
+      ]
+    }
+  ],
+  "pisos": [],
+  "contradicciones": [],
+  "factores": [
+    {
+      "factor": "base",
+      "detalle": "prioridad inicial baja",
+      "aporte": 20.0,
+      "ids_registro": [
+        "IC-HLF-00002"
+      ]
+    },
+    {
+      "factor": "evento",
+      "detalle": "visita_urgencia: triage ESI 2, hace 21 días",
+      "aporte": 13.61,
+      "ids_registro": [
+        "EV-000004"
+      ]
+    },
+    {
+      "factor": "evento",
+      "detalle": "hospitalizacion: ingreso hospitalario, hace 4 días",
+      "aporte": 17.45,
+      "ids_registro": [
+        "EV-000005"
+      ]
+    },
+    {
+      "factor": "aceleracion",
+      "detalle": "2 eventos graves en 90 días frente a 0 en los 90 previos",
+      "aporte": 5.0,
+      "ids_registro": [
+        "EV-000004",
+        "EV-000005"
+      ]
+    },
+    {
+      "factor": "medicion_zona",
+      "detalle": "presion_sistolica 167 mmHg fuera del rango 90-139",
+      "aporte": 5.71,
+      "ids_registro": [
+        "MED-372ba075aa3128b4"
+      ]
+    },
+    {
+      "factor": "medicion_brusco",
+      "detalle": "presion_sistolica 167 mmHg se aleja de la mediana previa (100) en la dirección dañina",
+      "aporte": 4.0,
+      "ids_registro": [
+        "MED-372ba075aa3128b4",
+        "MED-43528798179b38e0",
+        "MED-668054b16785a1c7",
+        "MED-6f2b6169b009dc9b"
+      ]
+    },
+    {
+      "factor": "medicion_tendencia",
+      "detalle": "presion_sistolica: tendencia en la dirección dañina en las últimas 4 mediciones (+9.33 mmHg cada 30 días)",
+      "aporte": 4.0,
+      "ids_registro": [
+        "MED-43528798179b38e0",
+        "MED-668054b16785a1c7",
+        "MED-6f2b6169b009dc9b",
+        "MED-372ba075aa3128b4"
+      ]
+    },
+    {
+      "factor": "espera",
+      "detalle": "275 días, plazo referencial 180",
+      "aporte": 5.28,
+      "ids_registro": [
+        "IC-HLF-00002"
+      ]
+    }
+  ],
+  "alertas_gestion": [],
+  "confianza": "alta",
+  "motivo_confianza": [
+    "sin mediciones en los últimos 30 días"
+  ],
+  "marcas_inferido": [],
+  "estado_revision": "pendiente_revision_medica"
+}

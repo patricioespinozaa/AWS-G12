@@ -13,7 +13,17 @@ data/dataset_hlf_ambulatorio
 __pycache__/
 *.pyc
 .venv/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 .env
 
 # Notebooks
 .ipynb_checkpoints/
+
+
+# key
+secret.txt
+# Salidas derivadas de datos de pacientes (propuestas, análisis, decisiones, auditoría)
+salidas/

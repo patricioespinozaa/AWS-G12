@@ -1,0 +1,41 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "blocking": false,
+      "confidence": "confirmed",
+      "what": "Fallo de auditoría informado como fallo de guardado",
+      "where": "src/hlf_priorizacion/bandeja/decisiones.py guardar_decision; app/bandeja.py _formulario",
+      "why": "La decisión se agrega antes del evento decision_medica; si la auditoría falla, la UI dice 'No se pudo guardar la decisión' aunque ya quedó en decisiones.jsonl, la auditoría queda incompleta y un reintento duplica la decisión. Distinguir el mensaje y registrar id_decision en el log de error."
+    },
+    {
+      "blocking": false,
+      "confidence": "confirmed",
+      "what": "Radio de decisión preseleccionado en 'Aceptar'",
+      "where": "app/bandeja.py _formulario (st.radio key detalle-decision-radio sin index=None)",
+      "why": "Un solo clic en Guardar acepta la propuesta sin elección explícita; usar index=None y exigir elección."
+    },
+    {
+      "blocking": false,
+      "confidence": "confirmed",
+      "what": "Reglas pequeñas en la capa de presentación",
+      "where": "app/bandeja.py _vista_cambios (a >= b en lugar de validar_cortes) y _analisis (rama D-4 por tipo_resultado)",
+      "why": "Duplican reglas que deberían vivir en bandeja/ y no tienen pruebas unitarias; mover a bandeja/."
+    },
+    {
+      "blocking": false,
+      "confidence": "confirmed",
+      "what": "Selección de fila → Detalle sin probar",
+      "where": "app/bandeja.py _abrir (on_select de bandeja-tabla y cambios-tabla*)",
+      "why": "AppTest no simula la selección de st.dataframe y no hubo navegador; verificar a mano antes de la demo."
+    },
+    {
+      "blocking": false,
+      "confidence": "confirmed",
+      "what": "Mensajes de validación con nombres de campo",
+      "where": "src/hlf_priorizacion/bandeja/decisiones.py _mensajes",
+      "why": "El médico ve 'ajustar exige prioridad_final'; cosmético."
+    }
+  ],
+  "reviewDoc": "c:\\Users\\LoG\\Desktop\\Priorizacion\\AWS-G12\\aidlc-docs\\construction\\u3-bandeja\\code\\review.md"
+}

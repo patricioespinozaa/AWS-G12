@@ -1,0 +1,112 @@
+# Parámetros del motor de reglas. Valores REFERENCIALES (docs/contexto-tecnico.md, secciones 6 y 7;
+# aidlc-docs/construction/u1-nucleo-motor/functional-design/business-rules.md, R5-R8).
+# Deben validarse con los clínicos del HLF (tema T3). Cada cambio crea una nueva versión del archivo
+# y se anota en aidlc-docs/construction/u1-nucleo-motor/bitacora-parametros.md (R10).
+version: reglas-v0.1.0
+
+# R5.1 Puntaje base por prioridad inicial
+base:
+  alta: 60
+  media: 40
+  baja: 20
+
+# R6.1 Niveles: baja < media <= puntaje < alta. "critica" solo por bandera roja.
+umbrales:
+  media: 40
+  alta: 60
+
+# R5.2 / R5.3 Eventos: w(tipo, subtipo) x r x exp(-ln2/vida_media x dias)
+eventos:
+  vida_media_dias: 90
+  relacion_misma_especialidad: 1.0
+  relacion_otra_especialidad: 0.5
+  pesos:
+    - {tipo: hospitalizacion, subtipo: ingreso UCI, peso: 24}
+    - {tipo: hospitalizacion, subtipo: ingreso hospitalario, peso: 18}
+    - {tipo: visita_urgencia, subtipo: descompensación grave, peso: 18}
+    - {tipo: visita_urgencia, subtipo: triage ESI 2, peso: 16}
+    - {tipo: visita_urgencia, subtipo: descompensación, peso: 10}
+    - {tipo: examen_alterado, subtipo: resultado alterado, peso: 6}
+    - {tipo: cambio_farmaco, subtipo: aumento dosis, peso: 6}
+    - {tipo: control_aps, subtipo: control, peso: 0}
+    - {tipo: control_aps, subtipo: control crónico, peso: 0}
+    - {tipo: control_aps, subtipo: control de rutina, peso: 0}
+    - {tipo: control_aps, subtipo: estabilización, peso: -2}
+    - {tipo: control_aps, subtipo: buena respuesta, peso: -4}
+    - {tipo: cambio_farmaco, subtipo: reducción dosis, peso: -4}
+
+# R5.4 Aceleración: +aporte si graves en (corte-90, corte] > graves en (corte-180, corte-90]
+aceleracion:
+  aporte: 5
+  ventana_dias: 90
+
+# R5.5 - R5.7 Mediciones (último valor no descartado de cada tipo)
+mediciones:
+  tope: 20
+  zona_maximo: 10
+  brusco_aporte: 4
+  brusco_fraccion_ancho: 0.2
+  tendencia_aporte: 4
+  tendencia_min_puntos: 3
+  tendencia_max_puntos: 5
+  tendencia_span_min_dias: 60
+  # Umbral agregado en el diseño funcional (R5.7): magnitud mínima de la pendiente,
+  # como fracción del ancho del rango por cada 30 días.
+  tendencia_fraccion_ancho_por_30_dias: 0.1
+  rangos:
+    presion_sistolica: {minimo: 90, maximo: 139, direccion: ambas}
+    presion_diastolica: {minimo: 60, maximo: 89, direccion: ambas}
+    glicemia: {minimo: 70, maximo: 140, direccion: ambas}
+    HbA1c: {minimo: 4.0, maximo: 6.4, direccion: alta}
+    saturacion_o2: {minimo: 95, maximo: 100, direccion: baja}
+    peak_flow: {minimo: 350, maximo: 600, direccion: baja}
+    escala_dolor_eva: {minimo: 0, maximo: 3, direccion: alta}
+    PHQ9: {minimo: 0, maximo: 9, direccion: alta}
+
+# R5.8 Espera: min(tope, tope x max(0, dias - plazo) / plazo)
+espera:
+  tope: 10
+  plazos:
+    alta: 30
+    media: 90
+    baja: 180
+
+# R5.9 Contradicción: medición en zona de riesgo de la misma especialidad entre -14 y +30 días
+contradiccion:
+  dias_antes: 14
+  dias_despues: 30
+
+# R6.2 - R6.5 Ventanas (días hacia atrás desde el corte, inclusivas)
+ventanas:
+  mediciones_banderas_pisos_dias: 90
+  evento_grave_bandera_dias: 30
+  evidencia_mejoria_dias: 90
+
+# R6.3 Banderas rojas sobre mediciones de los últimos 90 días -> "critica"
+banderas_medicion:
+  - {codigo: BR_PAS_ALTA, tipo: presion_sistolica, operador: ">=", umbral: 180}
+  - {codigo: BR_PAS_BAJA, tipo: presion_sistolica, operador: "<=", umbral: 80}
+  - {codigo: BR_PAD_ALTA, tipo: presion_diastolica, operador: ">=", umbral: 120}
+  - {codigo: BR_SATO2_BAJA, tipo: saturacion_o2, operador: "<", umbral: 90}
+  - {codigo: BR_GLICEMIA_ALTA, tipo: glicemia, operador: ">=", umbral: 400}
+  - {codigo: BR_GLICEMIA_BAJA, tipo: glicemia, operador: "<", umbral: 54}
+  - {codigo: BR_PHQ9_ALTO, tipo: PHQ9, operador: ">=", umbral: 20}
+  - {codigo: BR_PEAK_FLOW_BAJO, tipo: peak_flow, operador: "<", umbral: 150}
+
+# R6.2 Pisos sobre mediciones de los últimos 90 días -> al menos "alta"
+pisos:
+  - {codigo: PISO_EVA, tipo: escala_dolor_eva, operador: ">=", umbral: 8}
+  - {codigo: PISO_HBA1C, tipo: HbA1c, operador: ">=", umbral: 10}
+  - {codigo: PISO_PHQ9, tipo: PHQ9, operador: ">=", umbral: 15}
+
+# R7 Alertas de gestión (no alteran puntaje ni nivel)
+alertas:
+  citas_fallidas_minimo: 2
+  inasistencias_maximo: 2
+  silencio_dias_espera: 180
+  silencio_dias_sin_registro: 180
+
+# R8.2 Confianza
+confianza:
+  dias_mediciones_recientes: 90
+  dias_aviso_sin_mediciones: 30

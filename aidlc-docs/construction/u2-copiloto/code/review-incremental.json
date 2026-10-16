@@ -1,0 +1,44 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "minor",
+      "blocking": false,
+      "confidence": "likely",
+      "label": "Solicitud terminada perdida entre discard y la escritura",
+      "detail": "En ejecutar_tareas y _interrumpir, sin_recoger.discard(f) va antes de recoger(r). Un Ctrl+C justo entre las dos deja esa solicitud sin análisis, sin llamada_modelo y sin interrumpido. Hay que descartar después de recoger; _Persistidor.guardar ya ignora la segunda escritura."
+    },
+    {
+      "id": 2,
+      "severity": "minor",
+      "blocking": false,
+      "confidence": "possible",
+      "label": "Ctrl+C fuera de la espera protegida no corta los hilos",
+      "detail": "Un KeyboardInterrupt durante el bucle de pool.submit, o en el bucle final de _interrumpir, sube a ejecutar_barrido sin detener.set() ni shutdown(cancel_futures=True). El CLI devuelve 130 sin os._exit y el intérprete espera a los hilos de trabajo; en el caso de submit, las tareas enviadas siguen llamando al modelo y su resultado se descarta. Hay que fijar detener y cancelar el pool en ese except, y usar os._exit si quedan hilos vivos."
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "blocking": false,
+      "confidence": "likely",
+      "label": "Reintentos de servicio tras Ctrl+C",
+      "detail": "con_reintentos no mira detener: una solicitud en curso con limitación del servicio puede hacer hasta 3 invocaciones más después del Ctrl+C (dentro del tope de 70 s y del presupuesto). Conviene comprobar detener entre reintentos."
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "blocking": false,
+      "confidence": "confirmed",
+      "label": "Faltan pruebas del segundo Ctrl+C y de una señal real",
+      "detail": "Ninguna prueba ejercita el segundo Ctrl+C durante la espera, ni el aplazamiento de _sigint_diferido con un SIGINT real a mitad de una escritura. Falta agregar una prueba del segundo Ctrl+C con vigia y hacer la comprobación manual con el comando real que resumen.md deja pendiente."
+    }
+  ],
+  "verification": {
+    "ruff": "All checks passed! (exit 0)",
+    "mypy": "Success: no issues found in 44 source files (exit 0)",
+    "pytest": "280 passed, 1 deselected (bedrock) in 77.01s (exit 0)",
+    "pip_audit": "No known vulnerabilities found (exit 0; local package skipped)"
+  },
+  "reviewDoc": "c:\\Users\\LoG\\Desktop\\Priorizacion\\AWS-G12/aidlc-docs/construction/u2-copiloto/code/review-incremental.md"
+}

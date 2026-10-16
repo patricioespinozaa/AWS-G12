@@ -1,0 +1,11 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    "Non-blocking, user decision (confirmed): --max-llamadas caps pending requests, not real invocations; each request can make up to 2 validation attempts x 4 service attempts. Run 1 estimated 95 and made 148. Estimate the worst case, or enforce the cap as a live invocation budget and record the rest as limite_llamadas.",
+    "Non-blocking, user decision (confirmed): max_tokens raised from 4096 to 8192 without a user decision (deviation 6). Audit shows 33 of 176 real calls ended with stop_reason=max_tokens before the change. Ask the user to ratify.",
+    "Non-blocking (confirmed): ejecutar_barrido records SolicitudNoEncontrada and any ValueError while building the package as huella_distinta, which hides a missing request behind a fingerprint mismatch. Use a separate reason such as contexto_no_disponible.",
+    "Non-blocking (confirmed): a model ID outside the local allowlist exits 2 (ErrorConfiguracion) before any call, not 4; Bedrock-side denial exits 4. Document this or map the model-ID config error to exit 4.",
+    "Non-blocking (likely): the C6.5 negation window (60 chars) suppresses a forbidden-reason match whenever any unrelated no/sin/ni precedes the lowering verb, e.g. 'no hay motivo clinico urgente y por su comuna conviene bajarla'. This fails open on the equity rule. Scope the negation to the verb phrase and add a test."
+  ],
+  "reviewDoc": "c:\\Users\\LoG\\Desktop\\Priorizacion\\AWS-G12\\aidlc-docs\\construction\\u2-copiloto\\code/review.md"
+}

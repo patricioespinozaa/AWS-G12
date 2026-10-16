@@ -1,0 +1,8 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    "Blocking (confirmed): C6.5 fails open on contrastive/exception clauses after a negated lowering verb. validacion._usa_atributo_para_bajar requires an affirmed lowering verb, so when the only verb is negated and the forbidden attribute is affirmed after 'sino'/'salvo', the sentence is ACCEPTED: 'No se debe bajar por la clínica, sino por su comuna.', 'No hay que bajarla por la clínica sino por su comuna.', 'No corresponde bajarla, salvo por su previsión.', 'Conviene no bajarla salvo por su comuna.' (also 'No hay que bajarla por motivos clínicos: es por su comuna.'). Fix (fail-closed): if a sentence has any lowering verb and an affirmed attribute after a contrastive/exception marker (sino, salvo, excepto, menos, 'más que'), reject even if the verb is negated. Keep 'Paciente sin previsión; no corresponde postergar.' and the two real false positives accepted. Add these sentences to test_motivo_prohibido_respeta_la_negacion and to frase_con_motivo_prohibido (P16), then re-run the read-only C6.5 check over the 95 saved analyses.",
+    "Non-blocking (confirmed; likely pre-existing): _RE_BAJAR does not match 'baja', 'bajan', 'bajó', 'bajamos' or 'bajando', so 'Se baja la prioridad por su comuna.' and 'Bajamos la prioridad por su previsión.' are accepted. Extend the pattern to the conjugations of 'bajar' and add two example sentences."
+  ],
+  "reviewDoc": "c:\\Users\\LoG\\Desktop\\Priorizacion\\AWS-G12\\aidlc-docs/construction/u2-copiloto/code/review-fixes.md"
+}

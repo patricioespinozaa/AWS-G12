@@ -1,0 +1,10 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    "[no bloqueante] Rutas absolutas en logs de error: lote.py:385 interpola el mensaje de la excepción y carga.py:36-44 / parametros.py:213-217 incluyen la ruta completa (C:\\Users\\<usuario>\\...). Usar ruta.name o una ruta relativa.",
+    "[no bloqueante] Ruta de excepción por solicitud sin prueba: los except de lote.py:166, :184 y :212 no se ejercitan. Agregar en tests/ejemplos/test_lote.py una prueba que fuerce un fallo de evaluar (monkeypatch) y verifique errores['evaluacion']==1, sin_cubrir, exit 1 y que el resto del lote se evalúa.",
+    "[no bloqueante] Empeoramiento brusco sobre valor en rango: PAC-HLF-00032 al 2026-06-29 suma +4 por SatO2 97% vs mediana 98,5% (34,00 vs ≈30 a mano; nivel baja coincide). Llevar a validación clínica T3 y registrar cualquier cambio en bitacora-parametros.md.",
+    "[no bloqueante] Confianza sin condición de cohorte n>=30 (desviación documentada): reflejar la decisión en business-rules.md para que diseño y código no diverjan."
+  ],
+  "reviewDoc": "c:\\Users\\LoG\\Desktop\\Priorizacion\\AWS-G12\\aidlc-docs\\construction\\u1-nucleo-motor\\code\\review.md"
+}
