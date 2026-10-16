@@ -255,21 +255,25 @@ def test_reglas_del_canal(conn):
 
 # -- Reloj de la demo (flujo D) -----------------------------------------------------------------------
 def _reloj(c, fecha):
-    c.execute("UPDATE priorizacion.reloj SET modo = 'demo', fecha_demo = %s, actualizado_por = 'sistema'", (fecha,))
+    c.execute("UPDATE priorizacion.reloj SET modo = 'manual', fecha_manual = %s, actualizado_por = 'sistema'", (fecha,))
 
 
 @integracion
-def test_reloj_real_y_demo(conn):
-    assert conn.execute("SELECT priorizacion.fecha_corte() = current_date").fetchone()[0]
-    assert conn.execute("SELECT priorizacion.avanzar_reloj()").fetchone()[0] is None      # modo real: no avanza
-    _reloj(conn, date(2026, 6, 1))
-    assert conn.execute("SELECT priorizacion.avanzar_reloj()").fetchone()[0] == date(2026, 6, 2)
-    assert conn.execute("SELECT priorizacion.avanzar_reloj(7)").fetchone()[0] == date(2026, 6, 9)
-    assert conn.execute("SELECT priorizacion.fecha_corte()").fetchone()[0] == date(2026, 6, 9)
+def test_fecha_de_corte_de_los_datos_y_manual(conn):
+    # Modo datos (por defecto): la fecha de corte de la última versión aplicada, no el día real (F0006)
+    assert conn.execute("SELECT modo FROM priorizacion.reloj").fetchone()[0] == "datos"
+    corte_datos = conn.execute("SELECT max(fecha_corte) FROM raw.carga_lote WHERE estado = 'aplicada'").fetchone()[0]
+    assert corte_datos == date(2026, 10, 13)
+    assert conn.execute("SELECT priorizacion.fecha_corte()").fetchone()[0] == corte_datos
+    _reloj(conn, date(2026, 6, 1))                       # modo manual, para ensayos
+    assert conn.execute("SELECT priorizacion.fecha_corte()").fetchone()[0] == date(2026, 6, 1)
     with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():
-        conn.execute("UPDATE priorizacion.reloj SET fecha_demo = NULL")
+        conn.execute("UPDATE priorizacion.reloj SET fecha_manual = NULL")
+    with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():
+        conn.execute("UPDATE priorizacion.reloj SET modo = 'demo'")
     with pytest.raises(psycopg.errors.UniqueViolation), conn.transaction():
-        conn.execute("INSERT INTO priorizacion.reloj (id, modo, actualizado_por) VALUES (1, 'real', 'sistema')")
+        conn.execute("INSERT INTO priorizacion.reloj (id, modo, actualizado_por) VALUES (1, 'datos', 'sistema')")
+    assert conn.execute("SELECT to_regproc('priorizacion.avanzar_reloj')").fetchone()[0] is None
 
 
 @integracion

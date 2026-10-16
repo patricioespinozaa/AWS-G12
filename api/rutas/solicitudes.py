@@ -40,7 +40,15 @@ def ficha(id_solicitud: str, corte: str | None = None):
         "ficha": {k: a_json(v) for k, v in secciones.items()},
         "decisiones": a_json(E.registro.decisiones(id_solicitud)),
         "propuestas": a_json(E.registro.propuestas(id_solicitud).drop(columns=["motivos_alerta"], errors="ignore")),
+        "estimacion": _estimacion(id_solicitud, c),
     }
+
+
+def _estimacion(id_solicitud: str, corte) -> dict | None:
+    """La última estimación de espera calculada hasta el corte (F0006). Uso interno: no se informa al paciente."""
+    est = E.registro.estimaciones(id_solicitud)
+    est = est[est["fecha_calculo"] <= corte.isoformat()]
+    return a_json(est.iloc[-1].to_dict()) if len(est) else None
 
 
 @router.get("/api/solicitudes/{id_solicitud}/serie")
@@ -110,6 +118,7 @@ def registrar_decision(id_solicitud: str, d: DecisionIn):
     if d.decision == "ajusta" and not d.nivel_ajuste:
         raise HTTPException(422, "Indica el nivel al que se ajusta.")
     motivo = d.motivo.strip() or "Acepta la propuesta"
+    E.exigir_sin_recalculo()
     with E.escritura:
         hist = E.repo.historias[sol.id_paciente]
         decs = E.decisiones(id_solicitud)

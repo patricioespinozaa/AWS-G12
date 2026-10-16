@@ -10,10 +10,10 @@ RDS PostgreSQL (base operativa):
     python -m db restaurar                       # todos los esquemas + reconstrucción desde la historia completa
     python -m db permisos [--esquema E]          # roles de la app, el asistente y las Lambdas
     python -m db borrar --esquema E --confirmar  # elimina un esquema (o todos); nunca deja FKs huérfanas
-    python -m db reloj [--demo FECHA | --avanzar [N] | --real]   # fecha de corte (reloj de la demo)
+    python -m db reloj [--fijar FECHA | --datos]  # fecha de corte: la de los datos (por defecto) o fija para ensayos
 
 S3 + Athena (capa de consulta y análisis):
-    python -m db athena publicar                 # raw a S3 (CSV + Parquet), tablas en Athena y verificación
+    python -m db athena publicar [--desde-rds]   # raw a S3 (CSV + Parquet, o Parquet desde RDS), tablas y verificación
     python -m db athena descargar [--destino DIR]    # baja los CSV publicados y verifica su sha256 (contenedor)
     python -m db athena exportar [--desde --hasta]   # historial nocturno de RDS a S3, una partición por fecha
     python -m db athena verificar                # conteos y huérfanos en Athena contra el manifiesto
@@ -73,20 +73,17 @@ def _imprimir_tabla(res) -> None:
 
 
 def _reloj(conn, args) -> None:
+    """Fecha de corte (F0006): la de los datos (por defecto) o fija para ensayos."""
     with conn.transaction():
-        if args.demo:
-            conn.execute("UPDATE priorizacion.reloj SET modo = 'demo', fecha_demo = %s, dias_por_tick = %s, "
-                         "actualizado_en = now(), actualizado_por = 'sistema' WHERE id = 1",
-                         (date.fromisoformat(args.demo), args.dias_por_tick))
-        elif args.avanzar is not None:
-            if conn.execute("SELECT priorizacion.avanzar_reloj(%s)", (args.avanzar or None,)).fetchone()[0] is None:
-                raise carga.ErrorCarga("El reloj está en modo real: fija una fecha con --demo AAAA-MM-DD")
-        elif args.real:
-            conn.execute("UPDATE priorizacion.reloj SET modo = 'real', actualizado_en = now(), "
+        if args.fijar:
+            conn.execute("UPDATE priorizacion.reloj SET modo = 'manual', fecha_manual = %s, actualizado_en = now(), "
+                         "actualizado_por = 'sistema' WHERE id = 1", (date.fromisoformat(args.fijar),))
+        elif args.datos:
+            conn.execute("UPDATE priorizacion.reloj SET modo = 'datos', fecha_manual = NULL, actualizado_en = now(), "
                          "actualizado_por = 'sistema' WHERE id = 1")
-        modo, fecha, tick = conn.execute("SELECT modo, priorizacion.fecha_corte(), dias_por_tick "
-                                         "FROM priorizacion.reloj").fetchone()
-    print(f"Reloj en modo {modo} · fecha de corte {fecha}" + (f" · {tick} día(s) por tick" if modo == "demo" else ""))
+        modo, fecha = conn.execute("SELECT modo, priorizacion.fecha_corte() FROM priorizacion.reloj").fetchone()
+    detalle = "fin del periodo de la última carga aplicada" if modo == "datos" else "fija (ensayo)"
+    print(f"Fecha de corte {fecha} · modo {modo}: {detalle}")
 
 
 def _athena(args) -> int:
@@ -94,6 +91,10 @@ def _athena(args) -> int:
     cfg = athena.Config.desde_entorno()
     if args.accion == "publicar":
         print(f"Publicando raw en s3://{cfg.bucket}/{cfg.prefijo}/ · workgroup {cfg.workgroup}")
+        if args.desde_rds:
+            print(f"Origen: {conexion.describir(args.url)}")
+            with conexion.conectar(args.url) as conn:
+                return 0 if _imprimir_verificacion(athena.publicar(cfg, None, conn_rds=conn)) else 1
         return 0 if _imprimir_verificacion(athena.publicar(cfg, args.datos)) else 1
     s3, cliente = athena.clientes(cfg)
     if args.accion == "descargar":
@@ -174,17 +175,16 @@ def main(argv=None) -> int:
     b = sub.add_parser("borrar", help="Elimina un esquema o todos")
     b.add_argument("--esquema", choices=OPCIONES, required=True)
     b.add_argument("--confirmar", action="store_true", help="Necesario para borrar")
-    rl = sub.add_parser("reloj", help="Muestra o cambia la fecha de corte (reloj de la demo)")
+    rl = sub.add_parser("reloj", help="Muestra o cambia la fecha de corte")
     accion = rl.add_mutually_exclusive_group()
-    accion.add_argument("--demo", metavar="AAAA-MM-DD", help="Pasa a modo demo en esa fecha")
-    accion.add_argument("--avanzar", type=int, nargs="?", const=0, metavar="DIAS",
-                        help="Avanza el reloj (por defecto, los días por tick)")
-    accion.add_argument("--real", action="store_true", help="Vuelve a la fecha real")
-    rl.add_argument("--dias-por-tick", type=int, default=1, help="Con --demo: días que avanza cada tick")
+    accion.add_argument("--fijar", metavar="AAAA-MM-DD", help="Fija la fecha de corte (modo manual, para ensayos)")
+    accion.add_argument("--datos", action="store_true", help="Vuelve a la fecha de los datos (modo por defecto)")
     at = sub.add_parser("athena", help="Capa de consulta en S3 + Athena")
     at_sub = at.add_subparsers(dest="accion", required=True)
     ap = at_sub.add_parser("publicar", help="Sube raw a S3, crea las tablas en Athena y verifica")
     ap.add_argument("--datos", type=Path, default=DATA_DIR)
+    ap.add_argument("--desde-rds", action="store_true",
+                    help="Publica lo que hay en RDS (la suma de las cargas por periodo) en vez de una carpeta de CSV")
     ad = at_sub.add_parser("descargar", help="Baja los CSV publicados y los verifica contra el manifiesto")
     ad.add_argument("--destino", type=Path, default=DATA_DIR)
     ae = at_sub.add_parser("exportar", help="Exporta el historial nocturno de RDS a S3")

@@ -1,4 +1,4 @@
-# La imagen del backend solo copia priorizacion/, db/, api/ y requirements/base.txt (docker/backend/Dockerfile).
+# La imagen del backend solo copia priorizacion/, db/, api/, servicios/ y requirements/base.txt (docker/backend/Dockerfile).
 # Esta lista evita que el contexto de build (y los assets de CDK) arrastre datos del hospital o archivos pesados.
 .git
 .github

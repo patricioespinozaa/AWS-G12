@@ -10,11 +10,33 @@ import Kpis from "./paginas/Kpis";
 import Nocturno from "./paginas/Nocturno";
 import { sumarDias } from "./utils";
 
+const MODO_FECHA = {
+  datos: "fecha de la última carga aplicada",
+  manual: "fecha fijada para un ensayo",
+  local: "última fecha de los CSV locales",
+};
+
+function AvisoRecalculo() {
+  const { consolidacion } = useApp();
+  if (!consolidacion) return null;
+  if (consolidacion.en_curso)
+    return (
+      <div className="aviso info recalculo" role="status">
+        ⏳ Recalculando prioridades con los datos nuevos (desde {consolidacion.inicio?.slice(11, 16) ?? "ahora"}). Puedes
+        seguir revisando; al terminar la vista se actualiza sola.
+      </div>
+    );
+  if (consolidacion.error)
+    return <div className="aviso error recalculo" role="alert">El último recálculo falló: {consolidacion.error}</div>;
+  return null;
+}
+
 function BarraCorte() {
   const { meta, corte, setCorte } = useApp();
   if (!meta) return null;
   const esHoy = corte === meta.fecha_referencia;
   return (
+    <>
     <div className="barra">
       <div className="corte">
         <label htmlFor="corte">Fecha de corte</label>
@@ -28,13 +50,16 @@ function BarraCorte() {
           Hoy ({meta.fecha_referencia})
         </button>
       </div>
-      <span className="nota-corte">
-        Se usa solo lo que el hospital sabía hasta esa noche, como en la consolidación nocturna.
+      <span className="nota-corte" title={MODO_FECHA[meta.modo_fecha]}>
+        Datos al <b>{meta.datos_al}</b>{meta.modo_fecha === "manual" ? " (fecha fijada)" : ""}. Se usa solo lo que el
+        hospital sabía hasta esa noche.
       </span>
       <span className="ia">
         {meta.llm.activo ? `IA generativa: Amazon Bedrock · ${meta.llm.modelo}` : "IA generativa desactivada · explicaciones con plantilla"}
       </span>
     </div>
+    <AvisoRecalculo />
+    </>
   );
 }
 

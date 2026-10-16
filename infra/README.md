@@ -11,6 +11,7 @@ infra/
 │   ├── red.py             VPC 2 AZ y security groups (ALB → backend → RDS)
 │   ├── datos.py           bucket de datos, workgroup de Athena, RDS opcional
 │   ├── backend.py         ECS Fargate (imagen docker/backend), ALB interno
+│   ├── nocturno.py        consolidación nocturna: EventBridge Scheduler → tarea ECS (solo con RDS)
 │   └── frontend.py        bucket web, CloudFront (S3 con OAC + /api/* por VPC origin), despliegue de web/dist
 └── tests/test_stacks.py   garantías de seguridad sobre los templates sintetizados
 ```
@@ -19,7 +20,7 @@ infra/
 |---|---|---|
 | `Hlf<Entorno>-Red` | VPC, subredes, endpoint S3, security groups | — |
 | `Hlf<Entorno>-Datos` | Bucket de datos, workgroup `hlf-priorizacion-<entorno>`, RDS (solo demo) | Red |
-| `Hlf<Entorno>-Backend` | Cluster ECS, tarea, servicio, ALB interno, logs | Red, Datos |
+| `Hlf<Entorno>-Backend` | Cluster ECS, tarea, servicio, ALB interno, logs; en demo, la tarea nocturna y su programación | Red, Datos |
 | `Hlf<Entorno>-Frontend` | Bucket web, CloudFront, función SPA, regla CloudFront → ALB | Red, Backend |
 
 **Entornos** (`-c entorno=…`): `dev` (sin RDS; `cdk destroy` borra todo) y `demo` (con RDS; los datos sobreviven a un destroy: bucket `RETAIN`, RDS con snapshot y protección contra borrado).
@@ -71,7 +72,7 @@ aws ecs run-task --cluster <SalidaCluster> --task-definition <SalidaDefinicionTa
   --overrides '{"containerOverrides":[{"name":"api","command":["python","-m","db","restaurar"]}]}'
 ```
 
-El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o `python -m db reloj --demo 2026-06-01`. El resultado queda en los logs del backend.
+El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o `python -m db reloj --fijar 2026-06-01`. El resultado queda en los logs del backend.
 
 ## Operación
 
@@ -82,9 +83,13 @@ El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o 
 | Ver logs del backend | `aws logs tail <SalidaGrupoLogs> --follow` |
 | Reiniciar el backend | `aws ecs update-service --cluster <SalidaCluster> --service <SalidaServicio> --force-new-deployment` |
 | Sumar los datos de un periodo nuevo | Vista **Cargas** de la app (subir, vista previa, confirmar). Desde la línea de comandos, como tarea ECS: `python -m db cargar --incremental --periodo DESDE:HASTA --datos <carpeta> --confirmar` |
+| Dejar una exportación para la consolidación nocturna (F0006) | `aws s3 cp <carpeta> s3://<bucket>/hlf/entrada/<AAAA-MM-DD>/ --recursive` (CSV y `periodo.json` opcional). A las 02:00 (Santiago) se suma a `raw` y se consolida; queda en Cargas como versión nueva, o `fallida` con archivo y línea |
+| Correr la consolidación nocturna ahora | `aws ecs run-task` con `<SalidaTareaNocturna>`, las subredes y el SG de las salidas (`--launch-type FARGATE`) |
 | Reconstruir `raw` desde la historia completa | `python -m db restaurar` como tarea ECS (borra lo que no venga en los CSV publicados: solo para reconstruir) |
 | Probar los templates | `cd infra && python -m pytest tests -q` |
 | Destruir | `npx aws-cdk@2 destroy --all -c entorno=dev` (en `demo`, el bucket de datos y la RDS se conservan) |
+
+**Consolidación (F0006):** confirmar una carga responde de inmediato y el recálculo corre en segundo plano (la app muestra el aviso hasta que termina). La tarea nocturna (`servicios.nocturno`) hace lo mismo con lo que haya en el buzón y, al terminar, publica en S3 el Parquet de `raw` y las noches tocadas del historial para Athena. Si no hay nada nuevo, igual deja una corrida en la bitácora.
 
 **Primer arranque del backend:** calcula la serie nocturna completa (unos 20 s en un portátil; puede ser varias veces más en Fargate con 1 vCPU). El health check espera 6 minutos antes de marcar la tarea como fallida.
 
@@ -98,8 +103,8 @@ El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o 
 |---|---|---|
 | El despliegue del backend se revierte solo | El contenedor no arrancó (circuit breaker) | `aws logs tail <SalidaGrupoLogs>`. Si dice "No hay datos", falta `python -m db athena publicar` |
 | La web carga pero `/api/*` responde 502 o 504 | CloudFront no llega al ALB | Revisar que el SG del ALB tenga la regla desde la prefix list `com.amazonaws.global.cloudfront.origin-facing`. Si no basta, permitir el SG `CloudFront-VPCOrigins-Service-SG` que crea CloudFront |
-| `/api/nocturno/ejecutar` termina en 504 | Supera los 60 s de CloudFront | Esperado hasta F0006, que lo vuelve asíncrono |
 | `cdk deploy` falla al construir la imagen | Docker no está corriendo | Iniciar Docker Desktop |
+| Una exportación del buzón quedó `fallida` | Errores de validación (ver Cargas, con archivo y línea) | Corregir los CSV en la misma carpeta del buzón: con archivos distintos se vuelve a procesar la noche siguiente. Las entregas posteriores esperan a que se corrija |
 
 ## Costo aproximado (us-east-1, demo, 24 h al día)
 

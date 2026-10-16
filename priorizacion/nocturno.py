@@ -1,14 +1,15 @@
-"""Consolidación nocturna: recalcula la prioridad de cada solicitud activa, noche a noche.
+"""Simulación noche a noche: evalúa cada solicitud activa con solo los datos conocidos hasta esa noche.
 
-Para probar con el dataset se re-procesa la historia completa: cada noche usa solo los datos con
-fecha ≤ esa noche, como si el proceso hubiera corrido todos los días. En AWS es un job programado
-(EventBridge → Lambda/Glue) que corre una vez por noche.
+Es el motor de la consolidación (priorizacion/consolidacion.py, F0006): la primera vez re-procesa la historia
+completa; después, cada exportación nueva solo recalcula a los pacientes afectados y suma las noches nuevas.
 
-Uso:  python -m priorizacion.nocturno
+Uso:  python -m priorizacion.nocturno          # rehace la historia completa (p. ej. tras cambiar las reglas)
+      python -m servicios.nocturno             # la consolidación con buzón que corre cada noche en AWS
 """
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -20,17 +21,30 @@ from .explicacion import explicacion_plantilla
 from .motor import Decision, evaluar, huella_datos
 from .registro import Registro, crear_registro
 
+# Una sola escritura de la serie a la vez (la consolidación y los recálculos puntuales lo comparten)
+CANDADO = "hlf_consolidacion"
 
-def _serie_solicitud(repo: Repositorio, sol: Solicitud, decisiones: list[Decision], hasta: date):
-    """Evalúa una solicitud cada noche desde su ingreso hasta su egreso o `hasta`.
+
+@dataclass(frozen=True)
+class EstadoNoche:
+    """Lo que se necesita de la noche anterior para detectar un cambio (la simulación incremental parte de aquí)."""
+    nivel_propuesto: str
+    alerta: bool
+    prioridad_vigente: str
+
+
+def _serie_solicitud(repo: Repositorio, sol: Solicitud, decisiones: list[Decision], hasta: date,
+                     desde: date | None = None, previo: EstadoNoche | None = None):
+    """Evalúa una solicitud cada noche desde `desde` (por defecto, su ingreso) hasta su egreso o `hasta`.
 
     Devuelve las filas de la serie y los resultados de las noches en que conviene registrar una
-    propuesta: cuando cambia el nivel propuesto o se enciende una alerta.
+    propuesta: cuando cambia el nivel propuesto o se enciende una alerta. Para continuar una simulación ya
+    guardada (F0006) se pasa `desde` = la noche siguiente y `previo` = el estado de la última noche guardada.
     """
     hist = repo.historias[sol.id_paciente]
     filas, cambios = [], []
     fin = min(sol.fecha_egreso or hasta + timedelta(days=1), hasta + timedelta(days=1))
-    noche, previo = sol.fecha_ingreso, None
+    noche = max(sol.fecha_ingreso, desde) if desde else sol.fecha_ingreso
     while noche < fin:
         r = evaluar(sol, hist, noche, decisiones)
         filas.append((noche.isoformat(), sol.id_solicitud, sol.id_paciente, sol.especialidad, r.puntaje,
@@ -79,7 +93,8 @@ def _guardar_cambios(repo: Repositorio, registro: Registro, cambios, decisiones_
     return len(cambios)
 
 
-def ejecutar(repo: Repositorio, registro: Registro, hasta: date | None = None, progreso=None) -> dict:
+def ejecutar(repo: Repositorio, registro: Registro, hasta: date | None = None, progreso=None,
+             registrar: bool = True) -> dict:
     """Re-procesa la historia completa noche a noche."""
     hasta = hasta or config.FECHA_REFERENCIA      # en tiempo de ejecución: con RDS cambia al cargar datos
     t0, inicio = time.time(), datetime.now().isoformat(timespec="seconds")
@@ -104,7 +119,8 @@ def ejecutar(repo: Repositorio, registro: Registro, hasta: date | None = None, p
                    desde=repo.fecha_min.isoformat(), hasta=hasta.isoformat(), alcance="historia completa",
                    version_reglas=R.VERSION_REGLAS, n_evaluaciones=len(serie), n_propuestas=n_prop,
                    segundos=round(time.time() - t0, 1))
-    registro.registrar_corrida(**resumen)
+    if registrar:                      # la consolidación (F0006) lleva su propia bitácora
+        registro.registrar_corrida(**resumen)
     return resumen
 
 
@@ -121,7 +137,12 @@ def recalcular_solicitudes(repo: Repositorio, registro: Registro, ids: list[str]
     La posición de los demás en la misma cola también cambia: se recalcula cada especialidad afectada
     una sola vez, no una vez por solicitud.
     """
-    hasta = hasta or config.FECHA_REFERENCIA
+    with registro.candado(CANDADO):
+        return _recalcular_solicitudes(repo, registro, ids, hasta or config.FECHA_REFERENCIA, alcance)
+
+
+def _recalcular_solicitudes(repo: Repositorio, registro: Registro, ids: list[str], hasta: date,
+                            alcance: str | None) -> dict:
     t0, inicio = time.time(), datetime.now().isoformat(timespec="seconds")
     sols = [repo.solicitudes[i] for i in dict.fromkeys(ids) if i in repo.solicitudes]
     decisiones = registro.decisiones_por_solicitud()
@@ -156,9 +177,11 @@ def recalcular_solicitudes(repo: Repositorio, registro: Registro, ids: list[str]
 
 
 if __name__ == "__main__":
+    from .consolidacion import consolidar
     repo = Repositorio.crear()
     registro = crear_registro()
-    print("Consolidación nocturna: re-procesando la historia completa…")
-    res = ejecutar(repo, registro, progreso=lambda p, msg: print(f"  {p:4.0%} {msg}") if int(p * 100) % 20 == 0 else None)
-    print(f"Listo: {res['n_evaluaciones']:,} evaluaciones, {res['n_propuestas']:,} propuestas, {res['segundos']} s")
+    print("Recalculando la historia completa (para la consolidación con buzón: python -m servicios.nocturno)…")
+    res = consolidar(repo, registro, origen="completo", desde_cero=True)
+    print(f"Listo al {res['fecha_corte']}: {res['evaluaciones']:,} evaluaciones, {res['propuestas']:,} propuestas, "
+          f"{res['estimaciones']:,} estimaciones, {res['segundos']} s")
     print(f"Base: {'RDS' if config.usa_rds() else config.DB_PATH}")

@@ -111,6 +111,7 @@ def _antes_despues(id_paciente: str, corte: date, aplicar):
     sol = E.paciente(id_paciente)
     decs = E.decisiones(sol.id_solicitud)
     antes = evaluar(sol, E.repo.historias[id_paciente], corte, decs)
+    E.exigir_sin_recalculo()
     with E.escritura:
         aplicar()
         nocturno.recalcular_solicitud(E.repo, E.registro, sol.id_solicitud)

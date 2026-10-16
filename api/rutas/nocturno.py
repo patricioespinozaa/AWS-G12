@@ -1,7 +1,7 @@
-"""Consolidación nocturna: estado, reglas, fuentes y ejecución manual."""
-from fastapi import APIRouter
+"""Consolidación (F0006): bitácora de corridas, estado del recálculo en curso, reglas, fuentes y recálculo completo."""
+from fastapi import APIRouter, HTTPException
 
-from priorizacion import nocturno
+from priorizacion import config
 from priorizacion import reglas as R
 
 from .. import estado as E
@@ -15,6 +15,8 @@ def estado_nocturno():
     t = E.repo.tablas
     return {
         "version_reglas": R.VERSION_REGLAS,
+        "fecha_corte": config.FECHA_REFERENCIA.isoformat(),
+        "consolidacion": E.estado_consolidacion(),
         "corridas": a_json(E.registro.corridas().head(20)),
         "reglas": [{"grupo": g, "regla": r, "valor": v} for g, r, v in R.tabla_reglas()],
         "fuentes": [{"tabla": n, "filas": len(df)} for n, df in t.items()],
@@ -25,7 +27,16 @@ def estado_nocturno():
     }
 
 
-@router.post("/api/nocturno/ejecutar")
+@router.get("/api/nocturno/estado")
+def estado_consolidacion():
+    """Liviano, para consultar mientras corre un recálculo."""
+    return E.estado_consolidacion()
+
+
+@router.post("/api/nocturno/ejecutar", status_code=202)
 def ejecutar_nocturno():
-    with E.escritura, E.registro.candado("hlf_serie_completa"):
-        return nocturno.ejecutar(E.repo, E.registro)
+    """Rehace la historia completa en segundo plano (por ejemplo, después de cambiar las reglas)."""
+    E.exigir_sin_recalculo()
+    if not E.consolidar_en_segundo_plano("completo", desde_cero=True):
+        raise HTTPException(409, "Ya hay un recálculo en curso.")
+    return E.estado_consolidacion()
