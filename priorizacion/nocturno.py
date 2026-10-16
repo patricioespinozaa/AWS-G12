@@ -185,6 +185,8 @@ if __name__ == "__main__":
     from .consolidacion import consolidar
     repo = Repositorio.crear()
     registro = crear_registro()
+    from . import parametros
+    parametros.aplicar_vigente(registro)          # F0014: con la versión de reglas vigente
     print("Recalculando la historia completa (para la consolidación con buzón: python -m servicios.nocturno)…")
     res = consolidar(repo, registro, origen="completo", desde_cero=True)
     print(f"Listo al {res['fecha_corte']}: {res['evaluaciones']:,} evaluaciones, {res['propuestas']:,} propuestas, "

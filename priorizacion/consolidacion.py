@@ -21,6 +21,7 @@ from typing import Callable
 import pandas as pd
 
 from . import config
+from . import reglas as R
 from .bandeja import construir_bandeja
 from .datos import Repositorio
 from .estimacion import estimar
@@ -69,8 +70,8 @@ def consolidar(repo: Repositorio, registro: Registro, *, origen: str, hasta: dat
 def _alcance(origen: str, afectados, id_carga) -> str:
     if origen == "carga":
         return f"carga {id_carga}: {len(afectados)} pacientes afectados"
-    return {"nocturno": "consolidación nocturna", "completo": "historia completa",
-            "solicitud": "puesta al día"}.get(origen, origen)
+    return {"nocturno": "consolidación nocturna", "completo": "historia completa", "solicitud": "puesta al día",
+            "reglas": f"cambio de reglas ({R.VERSION_REGLAS})"}.get(origen, origen)
 
 
 def _consolidar(repo: Repositorio, registro: Registro, hasta: date, afectados: set[str], desde_cero: bool) -> dict:

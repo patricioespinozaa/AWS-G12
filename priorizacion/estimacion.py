@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .reglas import ORDEN_NIVEL
+from . import reglas as R
 
 METODO = "throughput_8_semanas"
 VERSION_METODO = "v1"
@@ -65,7 +65,7 @@ def estimar(cola: pd.DataFrame, citas: pd.DataFrame, corte: date) -> pd.DataFram
         # Con pocas atenciones los percentiles pueden ser 0: se usan la mejor y la peor semana con atenciones
         pesimista = (p25 if p25 > 0 else min(con_atenciones)) / 7
         optimista = max((p75 if p75 > 0 else max(con_atenciones)) / 7, pesimista)
-        ordenada = grupo.assign(_nivel=-grupo["prioridad_vigente"].map(ORDEN_NIVEL), _puntaje=-grupo["puntaje_vigente"]) \
+        ordenada = grupo.assign(_nivel=-grupo["prioridad_vigente"].map(R.ORDEN_NIVEL), _puntaje=-grupo["puntaje_vigente"]) \
             .sort_values(["_nivel", "_puntaje", "fecha_ingreso", "id_solicitud"])
         total, confianza = len(ordenada), _confianza(semanas)
         for posicion, f in enumerate(ordenada.itertuples(index=False), start=1):

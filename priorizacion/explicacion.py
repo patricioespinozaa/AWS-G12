@@ -20,7 +20,7 @@ from typing import Protocol
 
 from . import config
 from .motor import CATEGORIAS_CLINICAS, Resultado, _num
-from .reglas import BASE_PRIORIDAD, UMBRAL_ALTA, UMBRAL_MEDIA
+from . import reglas as R
 
 
 log = logging.getLogger("hlf.explicacion")
@@ -57,8 +57,8 @@ def explicacion_plantilla(r: Resultado) -> str:
         "igual": f"se mantiene en {r.nivel_propuesto}",
     }[r.cambio]
     partes = [f"Propuesta al {r.fecha_corte.isoformat()}: prioridad {r.nivel_propuesto.upper()} ({movimiento}). "
-              f"Puntaje de nivel {_num(r.puntaje_nivel)} (umbrales: media ≥ {_num(UMBRAL_MEDIA)}, alta ≥ "
-              f"{_num(UMBRAL_ALTA)}); parte de {_num(BASE_PRIORIDAD[r.prioridad_inicial])} por la prioridad inicial "
+              f"Puntaje de nivel {_num(r.puntaje_nivel)} (umbrales: media ≥ {_num(R.UMBRAL_MEDIA)}, alta ≥ "
+              f"{_num(R.UMBRAL_ALTA)}); parte de {_num(R.BASE_PRIORIDAD[r.prioridad_inicial])} por la prioridad inicial "
               f"{r.prioridad_inicial}."]
     if r.alerta:
         partes.append("Alerta: " + "; ".join(r.motivos_alerta) + ".")
@@ -136,7 +136,7 @@ def _carga_llm(r: Resultado) -> dict:
         "prioridad_propuesta": r.nivel_propuesto,
         "cambio": r.cambio,
         "puntaje_de_nivel": r.puntaje_nivel,
-        "umbrales": {"media": UMBRAL_MEDIA, "alta": UMBRAL_ALTA},
+        "umbrales": {"media": R.UMBRAL_MEDIA, "alta": R.UMBRAL_ALTA},
         "puntaje_de_orden_dentro_del_nivel": r.puntaje,
         "alerta": r.motivos_alerta,
         "resguardo_sin_evidencia_de_mejora": r.resguardo_aplicado,

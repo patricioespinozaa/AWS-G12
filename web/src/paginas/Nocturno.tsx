@@ -14,6 +14,7 @@ const PASOS = [
 
 const ORIGEN: Record<string, string> = {
   completo: "Historia completa", carga: "Carga confirmada", nocturno: "Consolidación nocturna", solicitud: "Puntual",
+  reglas: "Cambio de reglas",
 };
 
 export default function Nocturno() {
