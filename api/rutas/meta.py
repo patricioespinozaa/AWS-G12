@@ -1,16 +1,18 @@
 """Metadatos de la app y listado de solicitudes."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from priorizacion import config
 from priorizacion import reglas as R
 
 from .. import estado as E
+from .. import seguridad
+from ..seguridad import Persona, administradora
 
 router = APIRouter()
 
 
 @router.get("/api/meta")
-def meta():
+def meta(quien: Persona = Depends(administradora)):
     return {
         "fecha_referencia": config.FECHA_REFERENCIA.isoformat(),
         "datos_al": config.FECHA_REFERENCIA.isoformat(),          # fecha de corte de los datos (F0006)
@@ -27,7 +29,9 @@ def meta():
         "casos_referencia": [{"id_paciente": p, "id_solicitud": E.repo.solicitud_de_paciente(p).id_solicitud, "patron": n}
                              for p, n in E.CASOS_REFERENCIA.items() if any(
                                  s.id_paciente == p for s in E.repo.solicitudes.values())],
-        "usuaria": config.USUARIA,
+        "usuaria": quien.nombre,
+        "sesion": {"id_usuario": quien.id_usuario, "nombre": quien.nombre,
+                   "autenticacion": seguridad.configuracion().modo},
         "base_de_datos": "rds" if config.usa_rds() else "local",
     }
 

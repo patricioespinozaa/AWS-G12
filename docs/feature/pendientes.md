@@ -20,7 +20,7 @@ Prioridad: **Alta** = afecta la demo o la seguridad con datos reales · **Media*
 | T10 | **Subida de archivos grandes.** Cargas y exámenes viajan por la API en base64 (límite 20 MB y 10 MB). Si una exportación real lo supera, pasar a URLs prefirmadas de S3 | F0005 | F0012 | Baja |
 | T11 | **Convención CIE-10.** Los códigos del dataset tienen 3 caracteres; la normalización con punto (`E11.3`) aplica cuando lleguen subcategorías | F0001 | Cuando lleguen datos reales | Baja |
 | T12 | **Diccionario de F0002 desactualizado.** El diccionario generado de columnas no incluye los cambios de F0005 (`estado_app`, rol `administracion`, columnas de versión en `raw`). Hay una nota en F0002 que los lista; falta regenerar los diagramas y las tablas | F0005 | — | Baja |
-| T13 | **Ajustar el plan F0007.** Con una sola usuaria, la matriz de roles se reduce a `administracion`. El documento todavía describe cinco roles | F0005 | F0007 | Baja |
+| T13 | ~~**Ajustar el plan F0007.** Con una sola usuaria, la matriz de roles se reduce a `administracion`. El documento todavía describe cinco roles~~ **Resuelto:** el plan quedó con un solo rol, `administracion`. | F0005 | F0007 | Resuelto |
 
 ## 2. Operación de la demo en AWS
 

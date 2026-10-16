@@ -184,3 +184,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .contenido, .barra { padding-left: 16px; padding-right: 16px; }
   .aviso.recalculo { margin: 10px 16px 0; }
 }
+
+/* Sesión (F0007) */
+.sesion { margin-top: 10px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 4px; color: #c4d6d9; }
+.sesion span { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.68rem; }
+.sesion b { color: white; }
+.sesion .boton { align-self: flex-start; }
+.sesion .sin-auth { color: #f0d29d; }
+.pantalla-sesion { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--fondo, #f4f6f7); }
+.pantalla-sesion .tarjeta { max-width: 420px; }
+.pila-compacta { display: flex; flex-direction: column; gap: 4px; }

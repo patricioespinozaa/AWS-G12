@@ -12,12 +12,13 @@ import binascii
 import shutil
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from priorizacion import archivos, config
 
 from .. import estado as E
+from ..seguridad import Persona, administradora
 from ..serializacion import a_json
 
 router = APIRouter()
@@ -64,7 +65,7 @@ def historial():
 
 
 @router.post("/api/cargas")
-def subir(c: CargaIn):
+def subir(c: CargaIn, quien: Persona = Depends(administradora)):
     from db import carga
     periodo = (_fecha_opcional(c.periodo_desde), _fecha_opcional(c.periodo_hasta))
     if periodo[0] and periodo[1] and periodo[1] < periodo[0]:
@@ -85,7 +86,7 @@ def subir(c: CargaIn):
         raise HTTPException(422, str(e))
     try:
         with _conexion() as conn:
-            previa = carga.vista_previa(conn, carpeta, periodo, cargado_por=config.USUARIA)
+            previa = carga.vista_previa(conn, carpeta, periodo, cargado_por=quien.id_usuario)
             uri = archivos.guardar_carga(previa["id_carga"], contenidos)
             carga.registrar_ubicacion(conn, previa["id_carga"], uri)
     except carga.ErrorCarga as e:

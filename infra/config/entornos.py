@@ -28,10 +28,17 @@ class Entorno:
     llm_proveedor: str = ""            # "bedrock" lo activa F0008
     bedrock_model_id: str = ""
     dias_logs: int = 7
+    # Identidad (F0007): MFA opcional en la demo; obligatorio con datos reales
+    mfa_obligatorio: bool = False
 
     @property
     def id(self) -> str:
         return f"Hlf{self.nombre.capitalize()}"
+
+    @property
+    def parametro_cognito(self) -> str:
+        """Parámetro de SSM con la configuración del login (F0007): lo escribe FrontendStack y lo lee la API."""
+        return f"/hlf/{self.nombre}/cognito"
 
     @property
     def workgroup(self) -> str:

@@ -132,7 +132,7 @@ def _estimar(repo: Repositorio, registro: Registro, hasta: date) -> int:
     if bandeja.empty:
         registro.guardar_estimaciones(hasta, pd.DataFrame())
         return 0
-    cola = bandeja[["id_solicitud", "especialidad", "prioridad_vigente", "fecha_ingreso"]]
+    cola = bandeja[["id_solicitud", "especialidad", "prioridad_vigente", "puntaje_vigente", "fecha_ingreso"]]
     est = estimar(cola, repo.tablas["citas"], hasta)
     registro.guardar_estimaciones(hasta, est)
     return len(est)
