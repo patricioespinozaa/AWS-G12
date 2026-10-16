@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import time
+from pathlib import Path
 
 from db import esquema
 from db.conexion import conectar
@@ -124,3 +125,67 @@ def _esperar(agente, job_id: str) -> tuple[str, dict]:
             return "TIMEOUT", job.get("statistics", {})
         time.sleep(espera)
         espera = min(espera * 1.5, 30)
+
+
+# -- KB del paciente (F0010): solo preguntas frecuentes, nunca datos de pacientes ----------------------------------
+FAQ = Path(__file__).resolve().parents[1] / "asistente" / "faq"
+VERSION_FAQ = "faq-v1"
+
+
+def preparar_faq(url: str | None = None, s3=None, agente=None, esperar: bool = True) -> dict:
+    """Sube las preguntas frecuentes a kb/paciente/ y sincroniza la KB del paciente. La base rechaza cualquier
+    documento que no sea faq_paciente en esa KB (trigger consulta.validar_audiencia_documento)."""
+    if not (config.KB_PACIENTE_ID and config.KB_PACIENTE_DATA_SOURCE_ID and config.S3_BUCKET):
+        raise ErrorPreparacion("Falta HLF_KB_PACIENTE_ID, HLF_KB_PACIENTE_DATA_SOURCE_ID o HLF_S3_BUCKET")
+    import boto3
+    s3 = s3 or boto3.client("s3", region_name=config.AWS_REGION)
+    agente = agente or boto3.client("bedrock-agent", region_name=config.BEDROCK_REGION)
+    registro = RegistroPostgres(url)
+    prefijo = f"{config.S3_PREFIJO}/kb/paciente"
+    with conectar(url) as conn:
+        conn.autocommit = True
+        corte = registro.fecha_corte()
+        id_ingesta = conn.execute(
+            "INSERT INTO consulta.ingesta_kb (knowledge_base_id, data_source_id, audiencia, fecha_corte, "
+            "version_plantilla) VALUES (%s, %s, 'paciente', %s, %s) RETURNING id_ingesta",
+            (config.KB_PACIENTE_ID, config.KB_PACIENTE_DATA_SOURCE_ID, corte, VERSION_FAQ)).fetchone()[0]
+        try:
+            filas = []
+            for archivo in sorted(FAQ.glob("*.md")):
+                cuerpo = archivo.read_bytes()
+                clave = f"{prefijo}/{archivo.name}"
+                _subir_si_cambio(s3, clave, cuerpo, "text/markdown; charset=utf-8")
+                _subir_si_cambio(s3, f"{clave}.metadata.json", json.dumps(
+                    {"metadataAttributes": {"tipo": "faq_paciente"}}).encode(), "application/json")
+                filas.append((id_ingesta, "faq_paciente", archivo.stem, None, f"s3://{config.S3_BUCKET}/{clave}",
+                              hashlib.sha256(cuerpo).hexdigest(), json.dumps({"tipo": "faq_paciente"})))
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.executemany("INSERT INTO consulta.documento_kb (id_ingesta, tipo, clave, id_paciente, s3_uri, "
+                                    "sha256, metadatos) VALUES (%s, %s, %s, %s, %s, %s, %s)", filas)
+            job = agente.start_ingestion_job(knowledgeBaseId=config.KB_PACIENTE_ID,
+                                             dataSourceId=config.KB_PACIENTE_DATA_SOURCE_ID)["ingestionJob"]
+            conn.execute("UPDATE consulta.ingesta_kb SET estado = 'sincronizando', ingestion_job_id = %s, n_documentos = %s "
+                         "WHERE id_ingesta = %s", (job["ingestionJobId"], len(filas), id_ingesta))
+            if not esperar:
+                return {"id_ingesta": id_ingesta, "documentos": len(filas)}
+            estado, stats = _esperar_kb(agente, config.KB_PACIENTE_ID, config.KB_PACIENTE_DATA_SOURCE_ID,
+                                        job["ingestionJobId"])
+            _cerrar(conn, id_ingesta, "completa" if estado == "COMPLETE" else "fallida",
+                    n_fallidos=int(stats.get("numberOfDocumentsFailed", 0) or 0))
+            return {"id_ingesta": id_ingesta, "documentos": len(filas),
+                    "estado": "completa" if estado == "COMPLETE" else "fallida"}
+        except Exception as e:
+            _cerrar(conn, id_ingesta, "fallida", error=f"{type(e).__name__}: {str(e)[:400]}")
+            raise
+
+
+def _esperar_kb(agente, kb_id: str, ds_id: str, job_id: str) -> tuple[str, dict]:
+    inicio, espera = time.time(), 5
+    while True:
+        job = agente.get_ingestion_job(knowledgeBaseId=kb_id, dataSourceId=ds_id, ingestionJobId=job_id)["ingestionJob"]
+        if job["status"] in ("COMPLETE", "FAILED", "STOPPED") or time.time() - inicio > ESPERA_MAX_S:
+            return job["status"], job.get("statistics", {})
+        time.sleep(espera)
+        espera = min(espera * 1.5, 30)
+

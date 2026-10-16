@@ -1,6 +1,6 @@
 # F0010 · Asistente del paciente por WhatsApp
 
-**Estado:** Plan · **Depende de:** F0005, F0006, F0008 · **Tamaño:** L
+**Estado:** Implementado (falta desplegar y vincular el número de WhatsApp en Meta) · **Depende de:** F0005, F0006, F0008 · **Tamaño:** L
 
 ## Objetivo
 
@@ -11,7 +11,7 @@ Que el paciente pueda hacer por WhatsApp lo siguiente, con su identidad verifica
 
 Es el flujo B de `docs/diagramas/flujos-aws.pdf`.
 
-## Qué existe hoy
+## Punto de partida (antes de F0010)
 
 - **Esquema `canal` en RDS (F0002), completo y probado:**
   - Tablas: `contacto_paciente` (teléfono cifrado + HMAC), `consentimiento`, `conversacion`, `verificacion_identidad`, `turno`, `divulgacion`, `derivacion_humana`, `mensaje_paciente`, `evidencia_externa` y `notificacion`.
@@ -107,3 +107,29 @@ infra/stacks/asistente.py             tema SNS, Lambda, clave KMS, secreto del H
 - **Aprobación de WhatsApp Business:** la cuenta de Meta, el número y las plantillas pueden tardar días. El simulador cubre la demo.
 - **Dato de verificación:** el dataset no trae RUT ni fecha de nacimiento. En la demo se usa un código por SMS al número registrado.
 - **Límite de la verificación:** el rol del asistente puede marcar una conversación como verificada (F0002). Mover la verificación a un servicio con rol propio antes de usar datos reales.
+
+## Resultado
+
+Implementado y probado en local (PostgreSQL con el dataset). El despliegue en AWS queda pendiente: las credenciales de la cuenta del hackatón vencieron durante la implementación. El alta del número en Meta/End User Messaging Social se hace fuera de CDK (ver Riesgos).
+
+**Cómo quedó:**
+
+| Pieza | Implementación |
+|---|---|
+| Núcleo | `servicios/asistente/nucleo.py`: conversación → identificación → código o alarma (sin modelo) → Claude con herramientas → turnos y divulgaciones. Lo usan el simulador, WhatsApp y la voz (F0011) |
+| Dónde corre | En la API (ECS), en `/api/asistente/simulador` (sesión de la Administradora) y `/api/interno/asistente/whatsapp` (secreto de servicio). La Lambda de WhatsApp (`lambda_whatsapp.py`, sin VPC ni dependencias) solo pasa el evento de SNS a la API y envía la respuesta: no toca la base. Mismo motivo que F0009: RDS está en una subred aislada |
+| Rol de la base | Cada herramienta corre en una transacción con `SET LOCAL ROLE hlf_asistente_ia` y `canal.id_conversacion`: solo ve al paciente verificado. Una prueba confirma que ese rol no puede leer `raw` |
+| Verificación | Básica: número registrado (HMAC) + consentimiento `asistente_ia`. Reforzada: código de 6 dígitos (SMS con AWS End User Messaging SMS; en el simulador se muestra en pantalla), guardado solo como HMAC (`canal.codigo_verificacion`, migración `canal/002`), 5 minutos, tres intentos y bloqueo con derivación. El código no queda en el turno ni llega al modelo |
+| Alarmas | Detección determinista (`alarmas.py`) antes del modelo: derivación inmediata, `mensaje_paciente` `sintoma_alarma` pendiente (aparece en la bandeja) y un mensaje fijo de seguridad (SAMU 131) |
+| Teléfonos | KMS propio (clave con rotación) + HMAC con *pepper* en Secrets Manager (`servicios/comun/cifrado.py`). En AWS no hay valores por defecto: sin clave o sin pepper, falla |
+| Estimación | La posición y el rango solo se informan si la estimación es publicable (pregunta H5 al HLF). `HLF_ESTIMACION_PUBLICABLE=1` solo en `demo`, con datos sintéticos |
+| Preguntas frecuentes | KB del paciente (`kb/paciente/`, índice propio en S3 Vectors) con `servicios/asistente/faq/`; sin KB, el documento local |
+| Recordatorios | La consolidación nocturna programa en `canal.notificacion` los de las citas del día siguiente (solo con consentimiento) y los envía con la plantilla `recordatorio_cita_hlf` cuando hay número de WhatsApp |
+| Contactos de demo | `python -m servicios.asistente.contactos_demo`: números ficticios para los seis casos de referencia; `--telefono PAC=E164` para el número de alguien del equipo |
+| Simulador | Página Canal: conversación con el mismo núcleo, el nivel de verificación, el código de la demo y lo registrado; tabla de derivaciones para tomarlas o resolverlas |
+| Modelo | Claude Haiku 4.5 (`HLF_ASISTENTE_MODELO_ID`), permitido en la cuenta y más rápido que el de la app; con el guardrail de F0008 |
+
+**Pruebas** (`tests/test_asistente.py`, modelo simulado en PostgreSQL): número desconocido sin datos; con verificación básica solo citas; con código, prioridad, posición y rango, cada uno con su fila en `canal.divulgacion`; tres códigos malos bloquean y derivan; "me duele mucho el pecho" deriva sin llamar al modelo; pedir datos de otra persona solo devuelve los propios; el simulador y WhatsApp responden igual; los recordatorios respetan el consentimiento y no se repiten. Suite: 203 pruebas con PostgreSQL; infraestructura: 34.
+
+**Pendiente al desplegar:** renovar las credenciales; `cdk deploy --all -c entorno=demo`; `python -m servicios.asistente.contactos_demo` como tarea ECS; vincular el número en End User Messaging Social con destino el tema `SalidaTemaWhatsApp` y configurar `whatsapp_origen`; aprobar la plantilla `recordatorio_cita_hlf` en Meta.
+

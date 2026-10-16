@@ -10,7 +10,8 @@ Para cada especialidad:
 4. Sin atenciones en la ventana NO hay estimación: no se inventa un número.
 
 Es un rango, no una fecha: la posición en la lista no equivale a una fecha garantizada de atención. Se guarda con
-`publicable = False` hasta que el HLF apruebe informarla al paciente.
+`publicable = False` hasta que el HLF apruebe informarla al paciente (HLF_ESTIMACION_PUBLICABLE=1 solo en la demo con
+datos sintéticos): el asistente del paciente (F0010) solo informa posición y rango si es publicable.
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
+from . import config
 from .reglas import ORDEN_NIVEL
 
 METODO = "throughput_8_semanas"
@@ -70,5 +72,5 @@ def estimar(cola: pd.DataFrame, citas: pd.DataFrame, corte: date) -> pd.DataFram
             dias_min = math.ceil(posicion / optimista)
             dias_max = max(dias_min, math.ceil(posicion / pesimista))
             filas.append((f.id_solicitud, corte.isoformat(), f.prioridad_vigente, posicion, total, dias_min, dias_max,
-                          confianza, METODO, VERSION_METODO, False))
+                          confianza, METODO, VERSION_METODO, config.ESTIMACION_PUBLICABLE))
     return pd.DataFrame(filas, columns=COLUMNAS)

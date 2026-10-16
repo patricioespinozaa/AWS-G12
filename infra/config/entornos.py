@@ -29,6 +29,12 @@ class Entorno:
     llm_proveedor: str = ""            # "bedrock" activa las explicaciones con IA
     bedrock_model_id: str = ""
     dias_logs: int = 7
+    # Asistente del paciente (F0010/F0011). Los números de WhatsApp y SMS se dan de alta fuera de CDK (Meta, AWS End
+    # User Messaging); mientras estén vacíos, el simulador de la app cubre la demo
+    asistente_modelo_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    whatsapp_origen: str = ""          # phone-number-id-… de End User Messaging Social
+    sms_origen: str = ""               # identidad de origen de End User Messaging SMS (códigos de verificación)
+    estimacion_publicable: bool = False   # H5 de pendientes.md: solo True con datos sintéticos
     # Identidad (F0007): MFA opcional en la demo; obligatorio con datos reales
     mfa_obligatorio: bool = False
 
@@ -51,7 +57,7 @@ ENTORNOS = {
     "dev": Entorno("dev"),
     # Demo del hackatón: los datos y la base sobreviven a un destroy accidental.
     "demo": Entorno("demo", crear_rds=True, retener_datos=True, dias_logs=30, llm_proveedor="bedrock",
-                    bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+                    bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0", estimacion_publicable=True),
 }
 
 

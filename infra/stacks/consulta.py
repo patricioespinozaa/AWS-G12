@@ -89,7 +89,55 @@ class ConsultaStack(Stack):
                         max_tokens=600, overlap_percentage=15))),
         )
 
+        # KB del paciente (F0010): solo preguntas frecuentes. Índice propio en el mismo bucket de vectores; la base de
+        # datos impide registrar en ella algo que no sea faq_paciente
+        self.prefijo_kb_paciente = f"{entorno.prefijo_s3}/kb/paciente"
+        indice_paciente = s3vectors.CfnIndex(
+            self, "IndicePaciente",
+            vector_bucket_name=vectores.vector_bucket_name, index_name="paciente-faq",
+            data_type="float32", dimension=DIMENSIONES, distance_metric="cosine",
+            metadata_configuration=s3vectors.CfnIndex.MetadataConfigurationProperty(
+                non_filterable_metadata_keys=["AMAZON_BEDROCK_TEXT", "AMAZON_BEDROCK_METADATA"]))
+        indice_paciente.add_dependency(vectores)
+        rol_kb.add_to_policy(iam.PolicyStatement(
+            actions=["s3:GetObject"], resources=[datos.bucket.arn_for_objects(f"{self.prefijo_kb_paciente}/*")]))
+        rol_kb.add_to_policy(iam.PolicyStatement(
+            actions=["s3:ListBucket"], resources=[datos.bucket.bucket_arn],
+            conditions={"StringLike": {"s3:prefix": [f"{self.prefijo_kb_paciente}/*"]}}))
+        rol_kb.add_to_policy(iam.PolicyStatement(
+            actions=["s3vectors:PutVectors", "s3vectors:GetVectors", "s3vectors:DeleteVectors",
+                     "s3vectors:QueryVectors", "s3vectors:GetIndex", "s3vectors:ListVectors"],
+            resources=[indice_paciente.attr_index_arn]))
+        self.kb_paciente = bedrock.CfnKnowledgeBase(
+            self, "KbPaciente",
+            name=f"hlf-paciente-faq-{entorno.nombre}",
+            description="Preguntas frecuentes del paciente (F0010). Nunca datos de pacientes",
+            role_arn=rol_kb.role_arn,
+            knowledge_base_configuration=bedrock.CfnKnowledgeBase.KnowledgeBaseConfigurationProperty(
+                type="VECTOR",
+                vector_knowledge_base_configuration=bedrock.CfnKnowledgeBase.VectorKnowledgeBaseConfigurationProperty(
+                    embedding_model_arn=modelo_emb,
+                    embedding_model_configuration=bedrock.CfnKnowledgeBase.EmbeddingModelConfigurationProperty(
+                        bedrock_embedding_model_configuration=bedrock.CfnKnowledgeBase.BedrockEmbeddingModelConfigurationProperty(
+                            dimensions=DIMENSIONES, embedding_data_type="FLOAT32")))),
+            storage_configuration=bedrock.CfnKnowledgeBase.StorageConfigurationProperty(
+                type="S3_VECTORS",
+                s3_vectors_configuration=bedrock.CfnKnowledgeBase.S3VectorsConfigurationProperty(
+                    index_arn=indice_paciente.attr_index_arn, vector_bucket_arn=vectores.attr_vector_bucket_arn)),
+        )
+        self.kb_paciente.node.add_dependency(rol_kb)
+        self.fuente_paciente = bedrock.CfnDataSource(
+            self, "FuentePaciente",
+            knowledge_base_id=self.kb_paciente.attr_knowledge_base_id,
+            name="kb-paciente-s3",
+            data_deletion_policy="DELETE",
+            data_source_configuration=bedrock.CfnDataSource.DataSourceConfigurationProperty(
+                type="S3", s3_configuration=bedrock.CfnDataSource.S3DataSourceConfigurationProperty(
+                    bucket_arn=datos.bucket.bucket_arn, inclusion_prefixes=[f"{self.prefijo_kb_paciente}/"])),
+        )
+
         kb_arn = self.kb.attr_knowledge_base_arn
+        kb_paciente_arn = self.kb_paciente.attr_knowledge_base_arn
         glue = [self.format_arn(service="glue", resource="catalog")]
         for base in BASES_ATHENA:
             glue += [self.format_arn(service="glue", resource="database", resource_name=base),
@@ -97,7 +145,8 @@ class ConsultaStack(Stack):
         self.politica_consulta = iam.ManagedPolicy(
             self, "PoliticaConsulta", description="Consultar la KB del equipo clínico y Athena (solo lectura) — F0009",
             statements=[
-                iam.PolicyStatement(sid="Kb", actions=["bedrock:Retrieve", "bedrock:RetrieveAndGenerate"], resources=[kb_arn]),
+                iam.PolicyStatement(sid="Kb", actions=["bedrock:Retrieve", "bedrock:RetrieveAndGenerate"],
+                                    resources=[kb_arn, kb_paciente_arn]),
                 iam.PolicyStatement(sid="PerfilModelo", actions=["bedrock:GetInferenceProfile"],
                                     resources=[self.format_arn(service="bedrock", resource="inference-profile",
                                                                resource_name="*")]),
@@ -118,10 +167,12 @@ class ConsultaStack(Stack):
             self, "PoliticaPreparacion", description="Subir los documentos de la KB y sincronizarla — F0009",
             statements=[
                 iam.PolicyStatement(sid="Documentos", actions=["s3:PutObject", "s3:GetObject"],
-                                    resources=[datos.bucket.arn_for_objects(f"{self.prefijo_kb}/*")]),
+                                    resources=[datos.bucket.arn_for_objects(f"{self.prefijo_kb}/*"),
+                                               datos.bucket.arn_for_objects(f"{self.prefijo_kb_paciente}/*")]),
                 iam.PolicyStatement(sid="Ingesta", actions=["bedrock:StartIngestionJob", "bedrock:GetIngestionJob"],
-                                    resources=[kb_arn]),
+                                    resources=[kb_arn, kb_paciente_arn]),
             ])
 
         CfnOutput(self, "SalidaKb", value=self.kb.attr_knowledge_base_id)
         CfnOutput(self, "SalidaFuenteKb", value=self.fuente.attr_data_source_id)
+        CfnOutput(self, "SalidaKbPaciente", value=self.kb_paciente.attr_knowledge_base_id)

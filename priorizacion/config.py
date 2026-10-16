@@ -30,6 +30,12 @@ BEDROCK_GUARDRAIL_VERSION = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
 # Knowledge Base del equipo clínico (F0009): la crea el stack consulta; la API y la preparación la usan
 KB_ID = os.environ.get("HLF_KB_ID", "")
 KB_DATA_SOURCE_ID = os.environ.get("HLF_KB_DATA_SOURCE_ID", "")
+# Asistente del paciente (F0010/F0011): KB de preguntas frecuentes y modelo (más rápido que el de la app)
+KB_PACIENTE_ID = os.environ.get("HLF_KB_PACIENTE_ID", "")
+KB_PACIENTE_DATA_SOURCE_ID = os.environ.get("HLF_KB_PACIENTE_DATA_SOURCE_ID", "")
+ASISTENTE_MODELO_ID = os.environ.get("HLF_ASISTENTE_MODELO_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+# Estimación de espera informable al paciente (pregunta H5 al HLF). Solo datos sintéticos de la demo: =1
+ESTIMACION_PUBLICABLE = os.environ.get("HLF_ESTIMACION_PUBLICABLE", "0") == "1"
 
 # Base de datos (F0005). Con HLF_DATABASE_URL o HLF_DB_SECRET_ID (+ HLF_DB_HOST) la app lee raw de RDS y guarda
 # en los esquemas priorizacion y canal. Sin ellas, modo local: CSV + SQLite (respaldo de la demo).

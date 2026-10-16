@@ -111,6 +111,9 @@ def test_toda_ruta_exige_sesion_salvo_las_publicas(cliente, con_cognito):
         if plantilla in ("/api/salud", "/api/auth/config"):
             assert r.status_code == 200, plantilla
             publicas.add(plantilla)
+        elif plantilla.startswith("/api/interno/"):
+            # Entrada de servicios (Lambda de WhatsApp): secreto de servicio, no sesión (sin configurar → 503)
+            assert r.status_code in (401, 422, 503), f"{metodo} {plantilla} respondió {r.status_code} sin secreto"
         else:
             assert r.status_code == 401, f"{metodo} {plantilla} respondió {r.status_code} sin sesión"
             assert r.headers.get("www-authenticate") == "Bearer"
@@ -160,3 +163,16 @@ def test_cuenta_desactivada_no_entra(cliente, con_cognito):
         assert r.status_code == 403 and "desactivada" in r.json()["detail"]
     finally:
         E.registro.activar_usuario(SUB, True)
+
+
+@pytest.mark.datos
+def test_entrada_interna_exige_el_secreto_de_servicio(cliente, monkeypatch):
+    from api.rutas import asistente
+    monkeypatch.setattr(asistente, "_secreto", "secreto-de-prueba-123")
+    r = cliente.post("/api/interno/asistente/whatsapp", json={"evento_sns": "{}"})
+    assert r.status_code == 401
+    r = cliente.post("/api/interno/asistente/whatsapp", json={"evento_sns": "{}"}, headers={"X-HLF-Servicio": "otro"})
+    assert r.status_code == 401
+    r = cliente.post("/api/interno/asistente/whatsapp", json={"evento_sns": "{}"},
+                     headers={"X-HLF-Servicio": "secreto-de-prueba-123"})
+    assert r.status_code == 409                                         # pasa el secreto; local no tiene el esquema canal
