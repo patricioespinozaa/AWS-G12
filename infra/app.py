@@ -6,6 +6,7 @@
 
 Detalle y operación en infra/README.md; diseño en docs/feature/F0004-despliegue-frontend-backend.md.
 """
+from dataclasses import replace
 from pathlib import Path
 
 import aws_cdk as cdk
@@ -28,6 +29,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 
 def construir(app: cdk.App, nombre_entorno: str, dist: Path = RAIZ / "web" / "dist") -> dict[str, cdk.Stack]:
     entorno = cargar(nombre_entorno)
+    if (voz := app.node.try_get_context("voz")) is not None:      # -c voz=true: activa la voz sin tocar entornos.py
+        entorno = replace(entorno, voz=str(voz).lower() in ("1", "true", "si", "sí"))
     env = cdk.Environment(account=entorno.cuenta, region=entorno.region)
     red = RedStack(app, f"{entorno.id}-Red", entorno=entorno, env=env)
     datos = DatosStack(app, f"{entorno.id}-Datos", entorno=entorno, red=red, env=env)

@@ -284,13 +284,25 @@ def test_asistente_cifrado_secretos_y_lambda_sin_vpc(plantillas):
 
 
 
-def test_voz_connect_lex_y_grabacion_solo_con_consentimiento(plantillas):
+@pytest.fixture(scope="module")
+def plantillas_voz(tmp_path_factory):
+    """demo con `-c voz=true` (en demo la voz queda apagada hasta corregir el flujo de Connect)."""
+    dist = tmp_path_factory.mktemp("dist_voz")
+    (dist / "index.html").write_text("<!doctype html><title>HLF</title>", encoding="utf-8")
+    app = cdk.App(context={"entorno": "demo", "voz": "true"})
+    return "demo", {nombre: Template.from_stack(s) for nombre, s in construir(app, "demo", dist=dist).items()}
+
+
+def test_voz_apagada_por_defecto_en_demo(plantillas):
+    assert "voz" not in plantillas[1]
+
+
+def test_voz_connect_lex_y_grabacion_solo_con_consentimiento(plantillas_voz):
     """F0011: solo donde se activa. Lex en es_US con voz neural; toda intención pasa por la Lambda (sin VPC);
     Connect con flujo versionado, cola humana y grabaciones en el bucket de datos; el número no se reclama solo."""
-    entorno, t = plantillas
-    if entorno == "dev":
-        assert "voz" not in t
-        return
+    entorno, t = plantillas_voz
+    nombres = {a["Properties"]["AlarmName"] for a in _recursos(t["observabilidad"], "AWS::CloudWatch::Alarm").values()}
+    assert "hlf-demo-lambda-voz" in nombres
     (bot,) = _recursos(t["voz"], "AWS::Lex::Bot").values()
     (locale,) = bot["Properties"]["BotLocales"]
     assert locale["LocaleId"] == "es_US" and locale["VoiceSettings"] == {"VoiceId": "Lupe", "Engine": "neural"}
@@ -349,7 +361,7 @@ def test_observabilidad_tablero_alarmas_y_presupuesto(plantillas):
     nombres = {a["Properties"]["AlarmName"] for a in _recursos(o, "AWS::CloudWatch::Alarm").values()}
     base = {f"hlf-{entorno}-{n}" for n in ("api-5xx", "backend-tareas", "lambda-whatsapp")}
     assert base <= nombres
-    con_rds = {f"hlf-{entorno}-{n}" for n in ("rds-almacenamiento", "nocturno-fallido", "lambda-voz")}
+    con_rds = {f"hlf-{entorno}-{n}" for n in ("rds-almacenamiento", "nocturno-fallido")}
     assert (con_rds <= nombres) == (entorno == "demo")
     assert all(a["Properties"]["AlarmActions"] for a in _recursos(o, "AWS::CloudWatch::Alarm").values())
     tareas = next(a for a in _recursos(o, "AWS::CloudWatch::Alarm").values()
