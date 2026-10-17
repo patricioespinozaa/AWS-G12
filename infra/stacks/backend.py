@@ -15,6 +15,7 @@ from aws_cdk import CfnOutput, Duration, IgnoreMode, RemovalPolicy, Stack
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
+from aws_cdk import aws_iam as iam
 from aws_cdk import aws_logs as logs
 from constructs import Construct
 
@@ -61,6 +62,8 @@ class BackendStack(Stack):
             "HLF_ATHENA_WORKGROUP": datos.workgroup.name,
             "AWS_REGION": self.region,
             "LLM_PROVEEDOR": entorno.llm_proveedor,
+            # Login de la Administradora (F0007): la API lee el User Pool y el app client de este parámetro
+            "HLF_COGNITO_PARAMETRO": entorno.parametro_cognito,
         }
         if entorno.bedrock_model_id:
             variables["BEDROCK_MODEL_ID"] = entorno.bedrock_model_id
@@ -81,6 +84,10 @@ class BackendStack(Stack):
         # Lectura del prefijo del proyecto (CSV publicados, manifiesto, originales de las cargas) y escritura solo
         # donde la app guarda archivos: exámenes del canal y CSV de las cargas por periodo (F0005)
         datos.bucket.grant_read(tarea.task_role, f"{entorno.prefijo_s3}/*")
+        tarea.task_role.add_to_principal_policy(iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[self.format_arn(service="ssm", resource="parameter",
+                                       resource_name=entorno.parametro_cognito.lstrip("/"))]))
         for prefijo in ("canal/evidencias", "cargas"):
             datos.bucket.grant_put(tarea.task_role, f"{entorno.prefijo_s3}/{prefijo}/*")
         con_estado_en_base = datos.rds is not None
@@ -115,7 +122,8 @@ class BackendStack(Stack):
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[servicio],
             deregistration_delay=Duration.seconds(30),
-            health_check=elbv2.HealthCheck(path="/api/meta", healthy_http_codes="200",
+            # /api/salud: la única ruta sin sesión, y no devuelve datos (F0007)
+            health_check=elbv2.HealthCheck(path="/api/salud", healthy_http_codes="200",
                                            interval=Duration.seconds(30), timeout=Duration.seconds(10),
                                            healthy_threshold_count=2, unhealthy_threshold_count=5),
         )

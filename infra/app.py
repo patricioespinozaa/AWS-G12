@@ -14,6 +14,7 @@ from config.entornos import cargar
 from stacks.backend import BackendStack
 from stacks.datos import DatosStack
 from stacks.frontend import FrontendStack
+from stacks.identidad import IdentidadStack
 from stacks.red import RedStack
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -24,13 +25,14 @@ def construir(app: cdk.App, nombre_entorno: str, dist: Path = RAIZ / "web" / "di
     env = cdk.Environment(account=entorno.cuenta, region=entorno.region)
     red = RedStack(app, f"{entorno.id}-Red", entorno=entorno, env=env)
     datos = DatosStack(app, f"{entorno.id}-Datos", entorno=entorno, red=red, env=env)
+    identidad = IdentidadStack(app, f"{entorno.id}-Identidad", entorno=entorno, env=env)
     backend = BackendStack(app, f"{entorno.id}-Backend", entorno=entorno, red=red, datos=datos, env=env)
     frontend = FrontendStack(app, f"{entorno.id}-Frontend", entorno=entorno, red=red, backend=backend,
-                             dist=dist, env=env)
-    for stack in (red, datos, backend, frontend):
+                             identidad=identidad, dist=dist, env=env)
+    for stack in (red, datos, identidad, backend, frontend):
         cdk.Tags.of(stack).add("proyecto", "hlf-priorizacion")
         cdk.Tags.of(stack).add("entorno", entorno.nombre)
-    return {"red": red, "datos": datos, "backend": backend, "frontend": frontend}
+    return {"red": red, "datos": datos, "identidad": identidad, "backend": backend, "frontend": frontend}
 
 
 if __name__ == "__main__":

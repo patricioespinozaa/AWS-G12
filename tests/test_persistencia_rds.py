@@ -138,3 +138,32 @@ def test_la_decision_sin_motivo_la_rechaza_la_base(pg, repo):
     pid = pg.guardar_propuesta(r, "h", "x", "plantilla", "validacion")
     with pytest.raises(psycopg.errors.CheckViolation):
         pg.registrar_decision(pid, r, "acepta", r.nivel_propuesto, "", "administradora")
+
+
+def test_sincronizar_usuario_igual_que_sqlite(pg, sqlite):
+    """F0007: la persona autenticada queda en usuario (FK de las columnas *_por) y una cuenta desactivada no entra."""
+    for registro in (pg, sqlite):
+        assert registro.sincronizar_usuario("sub-123", "Ana Pérez")
+        assert registro.sincronizar_usuario("sub-123", "Ana Pérez Soto")             # el nombre se actualiza
+        fila = registro.usuarios().set_index("id_usuario").loc["sub-123"]
+        assert (fila["nombre"], fila["rol"], int(fila["activo"])) == ("Ana Pérez Soto", "administracion", 1)
+        assert registro.activar_usuario("sub-123", False)
+        assert not registro.sincronizar_usuario("sub-123", "Ana Pérez Soto")         # no se reactiva sola
+    assert _forma(pg.usuarios()) == _forma(sqlite.usuarios()[pg.usuarios().columns])
+    assert not pg.sincronizar_usuario("sistema", "Proceso automático")               # otro rol: no entra
+
+
+def test_decision_con_ajuste_de_puntaje_igual_que_sqlite(pg, sqlite, repo):
+    """F0007: la decisión guarda el puntaje del motor y el ajuste; el motor lo recibe igual desde ambas bases."""
+    sol = repo.solicitudes["IC-HLF-00002"]
+    r = evaluar(sol, repo.historias[sol.id_paciente], CORTE)
+    for registro in (pg, sqlite):
+        pid = registro.guardar_propuesta(r, "huella", explicacion_plantilla(r), "plantilla", "validacion")
+        registro.registrar_decision(pid, r, "ajusta", r.prioridad_vigente, "Adelantar en la cola", "administradora", 4.5)
+        registro.registrar_decision(pid, r, "acepta", r.nivel_propuesto, "Acepta", "administradora")
+    d_pg, d_sq = pg.decisiones("IC-HLF-00002"), sqlite.decisiones("IC-HLF-00002")
+    assert list(d_pg.columns) == list(d_sq.columns)
+    assert _forma(d_pg) == _forma(d_sq)
+    assert d_pg["puntaje_calculado"].tolist() == d_sq["puntaje_calculado"].tolist() == [r.puntaje, r.puntaje]
+    assert pg.decisiones_por_solicitud()["IC-HLF-00002"] == sqlite.decisiones_por_solicitud()["IC-HLF-00002"]
+    assert [d.ajuste_puntaje for d in pg.decisiones_por_solicitud()["IC-HLF-00002"]] == [4.5, None]

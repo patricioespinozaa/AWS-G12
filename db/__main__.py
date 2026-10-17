@@ -11,6 +11,7 @@ RDS PostgreSQL (base operativa):
     python -m db permisos [--esquema E]          # roles de la app, el asistente y las Lambdas
     python -m db borrar --esquema E --confirmar  # elimina un esquema (o todos); nunca deja FKs huérfanas
     python -m db reloj [--fijar FECHA | --datos]  # fecha de corte: la de los datos (por defecto) o fija para ensayos
+    python -m db usuarios [--desactivar ID | --activar ID]   # cuentas de la Administradora (F0007)
 
 S3 + Athena (capa de consulta y análisis):
     python -m db athena publicar [--desde-rds]   # raw a S3 (CSV + Parquet, o Parquet desde RDS), tablas y verificación
@@ -84,6 +85,27 @@ def _reloj(conn, args) -> None:
         modo, fecha = conn.execute("SELECT modo, priorizacion.fecha_corte() FROM priorizacion.reloj").fetchone()
     detalle = "fin del periodo de la última carga aplicada" if modo == "datos" else "fija (ensayo)"
     print(f"Fecha de corte {fecha} · modo {modo}: {detalle}")
+
+
+def _usuarios(conn, args) -> int:
+    """Cuentas con acceso (F0007). Desactivar aquí corta el acceso en menos de un minuto aunque el token siga
+    vigente; para impedir también el login, deshabilitar la cuenta en Cognito (infra/README.md)."""
+    objetivo = args.desactivar or args.activar
+    if objetivo:
+        with conn.transaction():
+            n = conn.execute("UPDATE priorizacion.usuario SET activo = %s WHERE id_usuario = %s AND rol = 'administracion'",
+                             (bool(args.activar), objetivo)).rowcount
+        if n == 0:
+            print(f"No existe una cuenta de Administradora con id {objetivo} (ingresa al menos una vez para que exista).",
+                  file=sys.stderr)
+            return 1
+    filas = conn.execute("SELECT id_usuario, nombre, activo, creado_en::date FROM priorizacion.usuario "
+                         "WHERE rol = 'administracion' ORDER BY creado_en").fetchall()
+    for id_usuario, nombre, activo, creado in filas:
+        print(f"  {'activa     ' if activo else 'desactivada'}  {nombre:<30} {id_usuario}  (desde {creado})")
+    if not filas:
+        print("  Sin cuentas todavía.")
+    return 0
 
 
 def _athena(args) -> int:
@@ -179,6 +201,10 @@ def main(argv=None) -> int:
     accion = rl.add_mutually_exclusive_group()
     accion.add_argument("--fijar", metavar="AAAA-MM-DD", help="Fija la fecha de corte (modo manual, para ensayos)")
     accion.add_argument("--datos", action="store_true", help="Vuelve a la fecha de los datos (modo por defecto)")
+    us = sub.add_parser("usuarios", help="Lista, desactiva o reactiva cuentas de la Administradora")
+    accion_us = us.add_mutually_exclusive_group()
+    accion_us.add_argument("--desactivar", metavar="ID", help="id_usuario (el sub de Cognito)")
+    accion_us.add_argument("--activar", metavar="ID")
     at = sub.add_parser("athena", help="Capa de consulta en S3 + Athena")
     at_sub = at.add_subparsers(dest="accion", required=True)
     ap = at_sub.add_parser("publicar", help="Sube raw a S3, crea las tablas en Athena y verifica")
@@ -229,6 +255,8 @@ def main(argv=None) -> int:
                 _aplicar(conn, args.esquema, esquema.aplicar_permisos)
             elif args.comando == "reloj":
                 _reloj(conn, args)
+            elif args.comando == "usuarios":
+                return _usuarios(conn, args)
             elif args.comando == "borrar":
                 if not args.confirmar:
                     que = "todos los esquemas" if args.esquema == "todos" else f"el esquema {args.esquema}"

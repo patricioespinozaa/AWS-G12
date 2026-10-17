@@ -43,13 +43,13 @@ export default function Bandeja() {
     if (soloAlertas) v = v.filter((f) => f.alerta === 1);
     if (soloCasos) v = v.filter((f) => f.caso_referencia);
     if (especialidad === "Todas") {
-      v = [...v].sort((a, b) => b.alerta - a.alerta || VALOR_NIVEL[b.nivel_propuesto] - VALOR_NIVEL[a.nivel_propuesto] || b.puntaje - a.puntaje);
+      v = [...v].sort((a, b) => b.alerta - a.alerta || VALOR_NIVEL[b.nivel_propuesto] - VALOR_NIVEL[a.nivel_propuesto] || b.puntaje_vigente - a.puntaje_vigente);
     } else {
       v = [...v].sort((a, b) => a.posicion_dinamica - b.posicion_dinamica);
     }
     return v;
   }, [cola, niveles, disp, texto, soloCambios, soloAlertas, soloCasos, especialidad]);
-  const maxPuntaje = Math.max(1, ...filas.map((f) => f.puntaje));
+  const maxPuntaje = Math.max(1, ...filas.map((f) => f.puntaje_vigente));
 
   return (
     <>
@@ -57,7 +57,7 @@ export default function Bandeja() {
         <h1>📋 Bandeja priorizada</h1>
         <p>
           Colas individuales por especialidad al <b>{corte}</b>. Orden: alerta → nivel propuesto → puntaje (incluye el
-          riesgo basal del diagnóstico) → orden de llegada. <b>Lista congelada</b> es la posición que tendría el paciente
+          riesgo basal del diagnóstico y, si lo hay, el ajuste de la Administradora ✎) → orden de llegada. <b>Lista congelada</b> es la posición que tendría el paciente
           si su prioridad no se hubiera actualizado nunca.
         </p>
       </div>
@@ -158,9 +158,10 @@ export default function Bandeja() {
                     <td><NivelBadge nivel={f.nivel_propuesto} /></td>
                     <td className={f.cambio === "sube" ? "cambio-sube" : f.cambio === "baja" ? "cambio-baja" : "suave"}>{ICONO_CAMBIO[f.cambio]}</td>
                     <td>
-                      <div className="barra-puntaje" title={`Nivel ${num(f.puntaje_nivel)} · orden ${num(f.puntaje)}`}>
-                        <div style={{ width: `${(70 * f.puntaje) / maxPuntaje}px` }} />
-                        {num(f.puntaje)}
+                      <div className="barra-puntaje" title={`Nivel ${num(f.puntaje_nivel)} · orden ${num(f.puntaje_vigente)}` +
+                        (f.ajuste_puntaje ? ` (motor ${num(f.puntaje)}, ajuste de la Administradora ${f.ajuste_puntaje > 0 ? "+" : "−"}${num(Math.abs(f.ajuste_puntaje))})` : "")}>
+                        <div style={{ width: `${(70 * Math.max(0, f.puntaje_vigente)) / maxPuntaje}px` }} />
+                        {num(f.puntaje_vigente)}{f.ajuste_puntaje ? " ✎" : ""}
                       </div>
                     </td>
                     <td style={{ minWidth: 260 }}>{f.motivo_principal}</td>

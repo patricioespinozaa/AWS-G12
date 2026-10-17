@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { cabeceraAuth, sesionVencida } from "./auth/sesion";
 
 export type Nivel = "alta" | "media" | "baja";
 export type Registro = Record<string, any>;
@@ -13,8 +14,9 @@ export interface Meta {
   agenda: { min: string; max: string };
   tipos_medicion: { tipo: string; nombre: string; unidad: string; rango: [number, number] }[];
   casos_referencia: { id_paciente: string; id_solicitud: string; patron: string }[];
-  /** Única usuaria de la plataforma (F0005); desde F0007, la de la sesión. */
+  /** Nombre de la persona con sesión (F0007). */
   usuaria: string;
+  sesion: { id_usuario: string; nombre: string; autenticacion: "cognito" | "desactivada" };
   /** rds: datos y registro en la base (habilita las cargas por periodo); local: CSV + SQLite. */
   base_de_datos: "rds" | "local";
   /** Fecha de corte de los datos (F0006): la de la última versión aplicada. Es el "hoy" de la app. */
@@ -67,6 +69,9 @@ export interface FilaBandeja {
   alerta: number;
   puntaje: number;
   puntaje_nivel: number;
+  /** Ajuste de la Administradora (F0007) y puntaje que ordena la cola (motor + ajuste). */
+  ajuste_puntaje: number;
+  puntaje_vigente: number;
   motivo_principal: string;
   dias_espera: number;
   disponibilidad: string;
@@ -108,6 +113,10 @@ export interface Resultado {
   factores: Factor[];
   version_reglas: string;
   motivo_principal: string;
+  /** Ajuste vigente de la Administradora al puntaje de orden (F0007). */
+  ajuste_puntaje: number;
+  /** Puntaje del motor + ajuste: ordena la cola. */
+  puntaje_vigente: number;
 }
 
 export interface Disponibilidad {
@@ -189,20 +198,35 @@ async function leerError(r: Response): Promise<string> {
   }
 }
 
-export async function getJSON<T>(url: string): Promise<T> {
-  const r = await fetch(url);
+/** fetch con la sesión (F0007). Un 401 significa que la sesión venció: se vuelve al login. */
+async function pedir(url: string, init: RequestInit = {}): Promise<Response> {
+  const r = await fetch(url, { ...init, headers: { ...cabeceraAuth(), ...(init.headers ?? {}) } });
+  if (r.status === 401) sesionVencida();
   if (!r.ok) throw new Error(await leerError(r));
-  return r.json();
+  return r;
+}
+
+export async function getJSON<T>(url: string): Promise<T> {
+  return (await pedir(url)).json();
 }
 
 export async function postJSON<T>(url: string, cuerpo?: unknown): Promise<T> {
-  const r = await fetch(url, {
+  const r = await pedir(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
   });
-  if (!r.ok) throw new Error(await leerError(r));
   return r.json();
+}
+
+/** Descarga un archivo de la API con la sesión (un enlace directo no lleva el token). */
+export async function descargar(url: string, nombre: string): Promise<void> {
+  const blob = await (await pedir(url)).blob();
+  const enlace = document.createElement("a");
+  enlace.href = URL.createObjectURL(blob);
+  enlace.download = nombre;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(enlace.href), 1000);
 }
 
 /** Lee un recurso y lo vuelve a pedir cuando cambia la URL o `version` (tras guardar algo). */

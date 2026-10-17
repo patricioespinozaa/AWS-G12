@@ -10,6 +10,7 @@ Tablas del sistema, separadas de los datos fuente (que nunca se modifican):
 - decision_clinica: lo que decidió el equipo clínico. Nunca se sobrescribe prioridad_inicial.
 - evidencia_externa / mensaje_paciente: lo que llega por el canal del paciente.
 - corrida_nocturna: bitácora del proceso nocturno.
+- usuario: las personas autenticadas (F0007), autoras de decisiones, revisiones y cargas.
 """
 from __future__ import annotations
 
@@ -79,6 +80,11 @@ CREATE TABLE IF NOT EXISTS corrida_nocturna (
     origen TEXT, estado TEXT, id_carga INTEGER, detalle TEXT, error TEXT
 );
 
+CREATE TABLE IF NOT EXISTS usuario (
+    id_usuario TEXT PRIMARY KEY, nombre TEXT NOT NULL, rol TEXT NOT NULL, activo INTEGER NOT NULL DEFAULT 1,
+    creado_en TEXT
+);
+
 CREATE TABLE IF NOT EXISTS estimacion_espera (
     id_solicitud TEXT, fecha_calculo TEXT, prioridad_vigente TEXT, posicion_vigente INTEGER, total_cola INTEGER,
     dias_estimados_min INTEGER, dias_estimados_max INTEGER, confianza TEXT, metodo TEXT, version_metodo TEXT,
@@ -87,9 +93,25 @@ CREATE TABLE IF NOT EXISTS estimacion_espera (
 """
 # Columnas agregadas después de la primera versión (F0006): bases SQLite locales existentes
 COLUMNAS_NUEVAS = {"corrida_nocturna": [("origen", "TEXT"), ("estado", "TEXT"), ("id_carga", "INTEGER"),
-                                        ("detalle", "TEXT"), ("error", "TEXT")]}
+                                        ("detalle", "TEXT"), ("error", "TEXT")],
+                   # F0007: ajuste del puntaje de orden por la Administradora
+                   "decision_clinica": [("puntaje_calculado", "REAL"), ("ajuste_puntaje", "REAL")],
+                   "serie_nocturna": [("ajuste_puntaje", "REAL NOT NULL DEFAULT 0")]}
 COLUMNAS_CORRIDA = ["id_corrida", "inicio", "fin", "desde", "hasta", "alcance", "version_reglas", "n_evaluaciones",
                     "n_propuestas", "segundos", "origen", "estado", "id_carga", "detalle", "error"]
+ROL_ADMINISTRACION = "administracion"     # el único rol de la plataforma (F0007)
+COLUMNAS_DECISION = ["id_decision", "id_propuesta", "id_solicitud", "fecha_corte", "prioridad_anterior",
+                     "prioridad_propuesta", "decision", "prioridad_final", "motivo", "usuario", "fecha_registro",
+                     "puntaje_calculado", "ajuste_puntaje"]
+
+
+def decisiones_a_objetos(df: pd.DataFrame) -> dict[str, list[Decision]]:
+    """Las decisiones de cada solicitud, como las usa el motor (con el ajuste de puntaje si lo hubo)."""
+    out: dict[str, list[Decision]] = {}
+    for r in df.itertuples(index=False):
+        ajuste = None if pd.isna(r.ajuste_puntaje) else float(r.ajuste_puntaje)
+        out.setdefault(r.id_solicitud, []).append(Decision(date.fromisoformat(r.fecha_corte), r.prioridad_final, ajuste))
+    return out
 COLUMNAS_ESTIMACION = ["id_solicitud", "fecha_calculo", "prioridad_vigente", "posicion_vigente", "total_cola",
                        "dias_estimados_min", "dias_estimados_max", "confianza", "metodo", "version_metodo", "publicable"]
 
@@ -111,7 +133,7 @@ class Registro(Protocol):
     def propuestas(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
     def factores(self, id_propuesta: int) -> pd.DataFrame: ...
     def registrar_decision(self, id_propuesta: int, r: Resultado, decision: str, prioridad_final: str,
-                           motivo: str, usuario: str) -> int: ...
+                           motivo: str, usuario: str, ajuste_puntaje: float | None = None) -> int: ...
     def decisiones(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
     def decisiones_por_solicitud(self) -> dict[str, list[Decision]]: ...
     def agregar_evidencia(self, id_paciente: str, fecha_examen: date, tipo: str, valor: float, lugar: str,
@@ -126,6 +148,7 @@ class Registro(Protocol):
     # F0006: consolidación
     def fecha_corte(self) -> date | None: ...
     def modo_fecha(self) -> str: ...
+    def sincronizar_usuario(self, id_usuario: str, nombre: str) -> bool: ...
     def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]): ...
     def iniciar_corrida(self, origen: str, alcance: str, desde: date, hasta: date, id_carga: int | None = None) -> int: ...
     def terminar_corrida(self, id_corrida: int, estado: str, n_evaluaciones: int = 0, n_propuestas: int = 0,
@@ -259,27 +282,26 @@ class RegistroSQLite:
 
     # -- decisiones ---------------------------------------------------------------------------
     def registrar_decision(self, id_propuesta: int, r: Resultado, decision: str, prioridad_final: str,
-                           motivo: str, usuario: str) -> int:
+                           motivo: str, usuario: str, ajuste_puntaje: float | None = None) -> int:
         with self.conexion() as c:
             cur = c.execute(
                 "INSERT INTO decision_clinica (id_propuesta, id_solicitud, fecha_corte, prioridad_anterior,"
-                " prioridad_propuesta, decision, prioridad_final, motivo, usuario, fecha_registro)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                " prioridad_propuesta, decision, prioridad_final, motivo, usuario, fecha_registro,"
+                " puntaje_calculado, ajuste_puntaje) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (id_propuesta, r.id_solicitud, r.fecha_corte.isoformat(), r.prioridad_vigente, r.nivel_propuesto,
-                 decision, prioridad_final, motivo, usuario, datetime.now().isoformat(timespec="seconds")))
+                 decision, prioridad_final, motivo, usuario, datetime.now().isoformat(timespec="seconds"),
+                 r.puntaje, ajuste_puntaje))
             return cur.lastrowid
 
     def decisiones(self, id_solicitud: str | None = None) -> pd.DataFrame:
+        cols = ", ".join(COLUMNAS_DECISION)
         if id_solicitud:
-            return self.consulta("SELECT * FROM decision_clinica WHERE id_solicitud = ? ORDER BY fecha_corte, "
+            return self.consulta(f"SELECT {cols} FROM decision_clinica WHERE id_solicitud = ? ORDER BY fecha_corte, "
                                  "id_decision", (id_solicitud,))
-        return self.consulta("SELECT * FROM decision_clinica ORDER BY fecha_corte, id_decision")
+        return self.consulta(f"SELECT {cols} FROM decision_clinica ORDER BY fecha_corte, id_decision")
 
     def decisiones_por_solicitud(self) -> dict[str, list[Decision]]:
-        out: dict[str, list[Decision]] = {}
-        for r in self.decisiones().itertuples(index=False):
-            out.setdefault(r.id_solicitud, []).append(Decision(date.fromisoformat(r.fecha_corte), r.prioridad_final))
-        return out
+        return decisiones_a_objetos(self.decisiones())
 
     # -- canal del paciente -------------------------------------------------------------------
     def _siguiente_id(self, c, tabla: str, columna: str, prefijo: str) -> str:
@@ -341,6 +363,24 @@ class RegistroSQLite:
 
     def modo_fecha(self) -> str:
         return "local"
+
+    # -- personas (F0007) ---------------------------------------------------------------------------
+    def sincronizar_usuario(self, id_usuario: str, nombre: str) -> bool:
+        """Crea o actualiza a la persona autenticada con el rol `administracion`. Devuelve si puede entrar
+        (activa y con ese rol). No cambia la versión de la app: no afecta lo que muestran las vistas."""
+        with self.conexion() as c:
+            c.execute("INSERT INTO usuario (id_usuario, nombre, rol, activo, creado_en) VALUES (?, ?, ?, 1, ?) "
+                      "ON CONFLICT (id_usuario) DO UPDATE SET nombre = excluded.nombre",
+                      (id_usuario, nombre, ROL_ADMINISTRACION, datetime.now().isoformat(timespec="seconds")))
+            activo, rol = c.execute("SELECT activo, rol FROM usuario WHERE id_usuario = ?", (id_usuario,)).fetchone()
+        return bool(activo) and rol == ROL_ADMINISTRACION
+
+    def usuarios(self) -> pd.DataFrame:
+        return self.consulta("SELECT id_usuario, nombre, rol, activo FROM usuario ORDER BY id_usuario")
+
+    def activar_usuario(self, id_usuario: str, activo: bool) -> bool:
+        with self.conexion() as c:
+            return c.execute("UPDATE usuario SET activo = ? WHERE id_usuario = ?", (int(activo), id_usuario)).rowcount > 0
 
     def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]):
         """Reemplaza solo las noches indicadas de la serie (todas las especialidades)."""

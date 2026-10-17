@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import threading
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -20,14 +20,30 @@ from priorizacion import config
 from priorizacion import reglas as R
 
 from . import estado as E
-from .rutas import agenda, bandeja, canal, cargas, kpis, meta, nocturno, solicitudes
+from . import seguridad
+from .rutas import agenda, bandeja, canal, cargas, kpis, meta, nocturno, publico, solicitudes
 
+seguridad.validar_arranque()
 E.iniciar()
 
 app = FastAPI(title="Priorización dinámica HLF", version=R.VERSION_REGLAS)
+
+
+@app.middleware("http")
+async def sin_cache(request: Request, call_next):
+    """Las respuestas de /api tienen datos de pacientes y dependen de la sesión: nunca se guardan en caché."""
+    respuesta = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        respuesta.headers["Cache-Control"] = "no-store"
+    return respuesta
+
+
+# Sin sesión: solo el health check y la configuración del login (no devuelven datos de pacientes)
+app.include_router(publico.router)
 for modulo in (meta, bandeja, solicitudes, agenda, canal, kpis, nocturno, cargas):
-    # Antes de cada petición: si otra tarea escribió o se aplicó una carga, se refresca (solo con RDS)
-    app.include_router(modulo.router, dependencies=[Depends(E.sincronizar)])
+    # Todas exigen la sesión de la Administradora (F0007), antes de tocar la base. Después: si otra tarea
+    # escribió o se aplicó una carga, se refresca (solo con RDS)
+    app.include_router(modulo.router, dependencies=[Depends(seguridad.administradora), Depends(E.sincronizar)])
 
 # Compatibilidad con quien importe a_json o el registro desde api.main
 from .serializacion import a_json  # noqa: E402,F401
