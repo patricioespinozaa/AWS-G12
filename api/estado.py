@@ -79,6 +79,11 @@ def _migrar() -> None:
     from db.conexion import conectar
     with conectar() as conn:
         esquema.migrar(conn)
+        try:                    # rol del asistente del paciente (F0010): las herramientas lo toman en cada transacción
+            with conn.transaction():
+                esquema.aplicar_permisos(conn, "canal")
+        except Exception as e:  # noqa: BLE001 — sin CREATEROLE el asistente no funciona, pero la app sí
+            log.warning("No se pudieron aplicar los permisos del esquema canal: %s", e)
 
 
 def _recordar_version() -> None:

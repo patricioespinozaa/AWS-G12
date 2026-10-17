@@ -11,6 +11,7 @@ from pathlib import Path
 import aws_cdk as cdk
 
 from config.entornos import cargar
+from stacks.asistente import AsistenteStack
 from stacks.backend import BackendStack
 from stacks.consulta import ConsultaStack
 from stacks.datos import DatosStack
@@ -30,14 +31,15 @@ def construir(app: cdk.App, nombre_entorno: str, dist: Path = RAIZ / "web" / "di
     identidad = IdentidadStack(app, f"{entorno.id}-Identidad", entorno=entorno, env=env)
     ia = IaStack(app, f"{entorno.id}-Ia", entorno=entorno, env=env)
     consulta = ConsultaStack(app, f"{entorno.id}-Consulta", entorno=entorno, datos=datos, env=env)
+    asistente = AsistenteStack(app, f"{entorno.id}-Asistente", entorno=entorno, env=env)
     backend = BackendStack(app, f"{entorno.id}-Backend", entorno=entorno, red=red, datos=datos, ia=ia,
-                           consulta=consulta, env=env)
+                           consulta=consulta, asistente=asistente, env=env)
     frontend = FrontendStack(app, f"{entorno.id}-Frontend", entorno=entorno, red=red, backend=backend,
-                             identidad=identidad, dist=dist, env=env)
-    for stack in (red, datos, identidad, ia, consulta, backend, frontend):
+                             identidad=identidad, dist=dist, parametro_api=asistente.parametro_api, env=env)
+    for stack in (red, datos, identidad, ia, consulta, asistente, backend, frontend):
         cdk.Tags.of(stack).add("proyecto", "hlf-priorizacion")
         cdk.Tags.of(stack).add("entorno", entorno.nombre)
-    return {"red": red, "datos": datos, "identidad": identidad, "ia": ia, "consulta": consulta, "backend": backend, "frontend": frontend}
+    return {"red": red, "datos": datos, "identidad": identidad, "ia": ia, "consulta": consulta, "asistente": asistente, "backend": backend, "frontend": frontend}
 
 
 if __name__ == "__main__":

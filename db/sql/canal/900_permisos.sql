@@ -32,3 +32,21 @@ GRANT UPDATE (id_paciente, id_contacto, nivel_verificacion, fin, estado, uri_gra
 GRANT INSERT ON canal.mensaje_paciente, canal.evidencia_externa TO hlf_asistente_ia;
 GRANT UPDATE (estado, enviada_en, intentos, id_conversacion, error) ON canal.notificacion TO hlf_asistente_ia;
 GRANT SELECT ON canal.notificacion TO hlf_asistente_ia;
+
+-- Asistente (F0010): el backend toma el rol en cada transacción (SET LOCAL ROLE hlf_asistente_ia), así que el usuario
+-- con que se conecta debe ser miembro. Los códigos de un solo uso se crean y se marcan usados.
+DO $$
+BEGIN
+    IF NOT pg_has_role(current_user, 'hlf_asistente_ia', 'MEMBER') THEN
+        EXECUTE format('GRANT hlf_asistente_ia TO %I', current_user);
+    END IF;
+END
+$$;
+GRANT SELECT, INSERT ON canal.codigo_verificacion TO hlf_asistente_ia;
+GRANT UPDATE (intentos, usado_en) ON canal.codigo_verificacion TO hlf_asistente_ia;
+GRANT INSERT ON canal.mensaje_paciente, canal.evidencia_externa TO hlf_asistente_ia;
+GRANT SELECT (id_conversacion, n_turno, emisor, texto, fecha) ON canal.turno TO hlf_asistente_ia;
+GRANT SELECT (es_principal) ON canal.contacto_paciente TO hlf_asistente_ia;   -- elegir el contacto principal
+-- Las herramientas registran mensajes y exámenes con la fecha de corte de los datos
+GRANT USAGE ON SCHEMA priorizacion TO hlf_asistente_ia;
+GRANT EXECUTE ON FUNCTION priorizacion.fecha_corte() TO hlf_asistente_ia;

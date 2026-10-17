@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { postJSON, Registro, useApi } from "../api";
+import { Derivaciones, SimuladorAsistente } from "../componentes/SimuladorAsistente";
 import { Aviso, Cargando, NivelBadge } from "../componentes/comunes";
 import { useApp } from "../contexto";
 import { ETIQUETA_DISP, num } from "../utils";
@@ -53,6 +54,12 @@ export default function Canal() {
           se salta la fila: su evidencia se evalúa con el mismo criterio que la del hospital.
         </p>
       </div>
+      {meta?.base_de_datos === "rds" && (
+        <div className="grid-2">
+          <SimuladorAsistente />
+          <Derivaciones />
+        </div>
+      )}
       <div className="grid-2">
         <div className="pila">
           <label className="campo"><span>Paciente (simulación)</span>

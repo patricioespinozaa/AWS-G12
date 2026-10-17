@@ -203,3 +203,6 @@ pre.fragmento { max-height: 220px; overflow-y: auto; }
 ol.fuentes { margin: 6px 0 0; padding-left: 20px; }
 details summary { cursor: pointer; font-weight: 600; }
 
+
+/* Simulador del asistente (F0010) */
+.tarjeta > .chat { min-height: 220px; max-height: 380px; background: #efeae2; border-radius: var(--radio); }

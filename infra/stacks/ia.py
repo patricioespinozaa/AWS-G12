@@ -79,11 +79,13 @@ class IaStack(Stack):
             description=f"Configuración {huella}")
 
         # Política de invocación: el perfil de inferencia elegido, sus modelos base y el guardrail
-        recursos = [self.format_arn(service="bedrock", resource="inference-profile",
-                                    resource_name=entorno.bedrock_model_id)] if entorno.bedrock_model_id else []
-        if entorno.bedrock_model_id:
-            base = entorno.bedrock_model_id.split(".", 1)[1] if entorno.bedrock_model_id.split(".")[0] in (
-                "us", "eu", "apac", "global") else entorno.bedrock_model_id
+        # El modelo de la app (explicaciones, consulta) y el del asistente del paciente (F0010, más rápido)
+        recursos = []
+        for modelo in dict.fromkeys(m for m in (entorno.bedrock_model_id, entorno.asistente_modelo_id) if m):
+            if not entorno.bedrock_model_id:
+                break
+            recursos.append(self.format_arn(service="bedrock", resource="inference-profile", resource_name=modelo))
+            base = modelo.split(".", 1)[1] if modelo.split(".")[0] in ("us", "eu", "apac", "global") else modelo
             recursos += [f"arn:aws:bedrock:{r}::foundation-model/{base}" for r in REGIONES_PERFIL_US]
         self.politica = iam.ManagedPolicy(
             self, "PoliticaInvocacion",
