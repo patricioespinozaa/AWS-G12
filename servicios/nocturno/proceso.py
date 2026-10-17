@@ -90,6 +90,8 @@ def correr(buzon=None, url: str | None = None, autoconfirmar: bool | None = None
         return {"sin_datos": True, "exportaciones": entregas,
                 "con_errores": any(e["estado"] == "fallida" for e in entregas)}
     registro = RegistroPostgres(url)
+    from priorizacion import parametros
+    parametros.aplicar_vigente(registro)          # F0014: la noche calcula con la versión de reglas vigente
     extra = {"buzon": str(buzon) if buzon else None, "exportaciones": entregas,
              "sin_exportaciones_nuevas": not entregas}
     resultado = consolidar(Repositorio.desde_postgres(url), registro, origen="nocturno", afectados=afectados,

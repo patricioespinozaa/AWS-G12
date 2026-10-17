@@ -10,6 +10,7 @@ import Cargas from "./paginas/Cargas";
 import Ficha from "./paginas/Ficha";
 import Kpis from "./paginas/Kpis";
 import Nocturno from "./paginas/Nocturno";
+import Reglas from "./paginas/Reglas";
 import { sumarDias } from "./utils";
 
 const MODO_FECHA = {
@@ -93,6 +94,7 @@ export default function App() {
           <span>Gestión</span>
           <NavLink to="/kpis">📊 KPIs</NavLink>
           <NavLink to="/nocturno">🌙 Consolidación nocturna</NavLink>
+          <NavLink to="/reglas">⚙️ Reglas</NavLink>
           <NavLink to="/cargas">📥 Cargas de datos</NavLink>
         </nav>
         <div className="principio">
@@ -129,6 +131,7 @@ export default function App() {
               <Route path="/canal" element={<Canal />} />
               <Route path="/kpis" element={<Kpis />} />
               <Route path="/nocturno" element={<Nocturno />} />
+              <Route path="/reglas" element={<Reglas />} />
               <Route path="/cargas" element={<Cargas />} />
               <Route path="*" element={<Navigate to="/bandeja" replace />} />
             </Routes>

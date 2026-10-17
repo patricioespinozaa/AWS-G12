@@ -16,10 +16,11 @@ from datetime import date, datetime
 
 import pandas as pd
 import psycopg
+from psycopg.types.json import Jsonb
 
 from . import config
 from .motor import Decision, Resultado
-from .registro import ROL_ADMINISTRACION, decisiones_a_objetos
+from .registro import COLUMNAS_VERSION_REGLAS, ROL_ADMINISTRACION, decisiones_a_objetos, versiones_reglas_df
 
 SERIE = """
     SELECT s.fecha::text AS fecha, s.id_solicitud, le.id_paciente, le.especialidad, s.puntaje::float8 AS puntaje,
@@ -350,6 +351,34 @@ class RegistroPostgres:
         with self.conexion() as c:
             return c.execute("UPDATE priorizacion.usuario SET activo = %s WHERE id_usuario = %s",
                              (activo, id_usuario)).rowcount > 0
+
+    # -- versiones de las reglas (F0014) ---------------------------------------------------------
+    def versiones_reglas(self) -> pd.DataFrame:
+        with self._lock:
+            cur = self._con().execute(f"SELECT {', '.join(COLUMNAS_VERSION_REGLAS)} FROM priorizacion.version_reglas "
+                                      "ORDER BY numero DESC")
+            columnas = [d.name for d in cur.description]
+            filas = [dict(zip(columnas, f)) for f in cur.fetchall()]
+        return versiones_reglas_df(filas)
+
+    def version_reglas_vigente(self) -> dict | None:
+        df = self.versiones_reglas()
+        return None if df.empty else df.iloc[0].to_dict()
+
+    def guardar_version_reglas(self, valores: dict, cambios: dict, motivo: str, usuario: str,
+                               restaura: int | None = None) -> int:
+        from .parametros import version_texto
+        if not cambios:
+            raise ValueError("Una versión nueva debe cambiar al menos un parámetro")
+        if len((motivo or "").strip()) < 5:
+            raise ValueError("El motivo es obligatorio")
+        with self.conexion() as c:
+            c.execute("SELECT pg_advisory_xact_lock(hashtext('hlf_version_reglas'))")
+            numero = c.execute("SELECT coalesce(max(numero), 0) + 1 FROM priorizacion.version_reglas").fetchone()[0]
+            c.execute("INSERT INTO priorizacion.version_reglas (numero, version, valores, cambios, motivo, creada_por, "
+                      "restaura) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                      (numero, version_texto(numero), Jsonb(valores), Jsonb(cambios), motivo.strip(), usuario, restaura))
+        return numero
 
     def modo_fecha(self) -> str:
         """`datos` (la fecha de la última versión aplicada) o `manual` (fijada para un ensayo)."""

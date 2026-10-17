@@ -54,7 +54,7 @@ class Resultado:
     factores: list[Factor] = field(default_factory=list)
     puntaje_nivel: float = 0.0       # base + señales clínicas: decide el nivel
     ajuste_puntaje: float = 0.0      # ajuste vigente de la Administradora al puntaje de orden (no cambia el nivel)
-    version_reglas: str = R.VERSION_REGLAS
+    version_reglas: str = field(default_factory=lambda: R.VERSION_REGLAS)   # la vigente al calcular (F0014)
 
     @property
     def puntaje_vigente(self) -> float:
