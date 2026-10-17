@@ -2,6 +2,10 @@
 
 Todo lo que cambia el resultado vive aquí y se versiona en VERSION_REGLAS. Los valores son un
 punto de partida para calibrar con el equipo clínico del HLF, no un estándar clínico.
+
+Estos son los valores de fábrica. La Administradora puede cambiar los editables desde la vista Reglas (F0014): cada
+cambio es una versión nueva (`priorizacion/parametros.py`) que reemplaza estos atributos y deja VERSION_REGLAS como
+"reglas-v0.1+c<n>". Por eso el resto del motor lee siempre `R.X` al calcular, nunca `from .reglas import X`.
 Ver docs/enfoque.md y docs/arquitectura.md.
 """
 
@@ -73,12 +77,18 @@ AJUSTE_SENALES_RIESGO_BASAL = {"alto": 0.25, "medio": 0.0, "bajo": -0.20}
 PLAZO_REFERENCIA_DIAS = {"alto": 90, "medio": 180, "bajo": 365}
 MAX_APORTE_ESPERA = 3.0
 
-# Edad
+# Edad (dos tramos)
+EDAD_UMBRAL_MAYOR = 75
+EDAD_PUNTOS_MAYOR = 2.0
+EDAD_UMBRAL = 65
+EDAD_PUNTOS = 1.0
+
+
 def puntos_edad(edad: int) -> float:
-    if edad >= 75:
-        return 2.0
-    if edad >= 65:
-        return 1.0
+    if edad >= EDAD_UMBRAL_MAYOR:
+        return EDAD_PUNTOS_MAYOR
+    if edad >= EDAD_UMBRAL:
+        return EDAD_PUNTOS
     return 0.0
 
 # Dos puntajes:
@@ -167,7 +177,8 @@ def tabla_reglas():
                f"orden {PUNTOS_RIESGO_BASAL[c]:+g} · señales ×{1 + AJUSTE_SENALES_RIESGO_BASAL[c]:g} "
                f"· plazo {PLAZO_REFERENCIA_DIAS[c]} d")
               for dx, (c, txt) in RIESGO_BASAL_DX.items()]
-    filas += [("Edad", "≥ 75 años", "+2"), ("Edad", "65 a 74 años", "+1"),
+    filas += [("Edad", f"≥ {EDAD_UMBRAL_MAYOR} años", f"{EDAD_PUNTOS_MAYOR:+g}"),
+              ("Edad", f"{EDAD_UMBRAL} a {EDAD_UMBRAL_MAYOR - 1} años", f"{EDAD_PUNTOS:+g}"),
               ("Espera", "Días de espera / plazo de referencia", f"hasta +{MAX_APORTE_ESPERA:g}"),
               ("Medición", "Último valor fuera de rango", f"{PESO_DESVIACION:g} × anchos de rango (máx. {MAX_DESVIACION:g})"),
               ("Medición", f"Tendencia de empeoramiento (≥ {MIN_MEDICIONES_TENDENCIA} mediciones)", f"hasta +{MAX_APORTE_TENDENCIA:g}"),

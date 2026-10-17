@@ -19,6 +19,7 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 | [F0011](F0011-asistente-voz.md) | Asistente del paciente por teléfono (voz) | Implementado | F0010 | Amazon Connect, Lex V2, Polly, Lambda |
 | [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos: subida a S3 y lectura asistida | Implementado | F0005, F0010 | S3, Textract, Bedrock |
 | [F0013](F0013-observabilidad-seguridad-costos.md) | Observabilidad, seguridad y control de costos | Implementado | F0004 (se amplía con cada feature) | CloudWatch, WAF, CloudTrail, Budgets, AWS Backup |
+| [F0014](F0014-configuracion-reglas.md) | Configuración de las reglas, versionada | Implementado | F0005, F0006, F0007 | RDS |
 
 Los pendientes que dejaron las features ya implementadas, y las preguntas abiertas para el HLF, están en [pendientes.md](pendientes.md).
 
@@ -42,6 +43,8 @@ flowchart LR
     F8 --> F10
     F10 --> F11[F0011 Voz]
     F10 --> F12[F0012 Exámenes OCR]
+    F6 --> F14[F0014 Reglas configurables]
+    F7 --> F14
 ```
 
 **Para la demo del hackatón** el camino mínimo es F0004 → F0005 → F0006 → F0008: la app publicada en AWS, con datos en RDS, cargas por periodo que mueven la cola y las explicaciones de Bedrock. F0009 a F0011 son la visión (los canales con IA). F0007 y F0013 son obligatorias antes de usar datos reales del HLF.

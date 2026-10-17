@@ -19,14 +19,14 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from priorizacion import config
+from priorizacion import config, parametros
 from priorizacion import reglas as R
 from servicios.comun import logs
 
 from . import estado as E
 from . import seguridad
 from .rutas import (agenda, asistente, bandeja, canal, cargas, consulta, examenes, kpis, meta, nocturno, publico,
-                    solicitudes)
+                    reglas, solicitudes)
 
 
 # Los loggers de la app (hlf.*) a stdout en INFO: en AWS llegan a CloudWatch Logs como JSON (F0013). Uvicorn solo
@@ -78,7 +78,10 @@ app.include_router(examenes.router_interno)
 for modulo in (meta, bandeja, solicitudes, agenda, examenes, canal, kpis, nocturno, cargas, consulta, asistente):
     # Todas exigen la sesión de la Administradora (F0007), antes de tocar la base. Después: si otra tarea
     # escribió o se aplicó una carga, se refresca (solo con RDS)
-    app.include_router(modulo.router, dependencies=[Depends(seguridad.administradora), Depends(E.sincronizar)])
+    app.include_router(modulo.router, dependencies=[Depends(seguridad.administradora), Depends(E.sincronizar),
+                                                    Depends(E.calculando)])
+# Reglas (F0014): simular y guardar toman el candado de escritura de los parámetros, no el de cálculo
+app.include_router(reglas.router, dependencies=[Depends(seguridad.administradora), Depends(E.sincronizar)])
 
 # Compatibilidad con quien importe a_json o el registro desde api.main
 from .serializacion import a_json  # noqa: E402,F401
@@ -87,8 +90,9 @@ from .serializacion import a_json  # noqa: E402,F401
 def _precalentar():
     """Calcula en segundo plano la bandeja y los KPIs del día de referencia para que la demo abra rápido."""
     try:
-        kpis.kpis(config.FECHA_REFERENCIA.isoformat())
-        agenda.panel_box(config.FECHA_REFERENCIA.isoformat())
+        with parametros.lectura():
+            kpis.kpis(config.FECHA_REFERENCIA.isoformat())
+            agenda.panel_box(config.FECHA_REFERENCIA.isoformat())
     except Exception:  # noqa: BLE001 — el precalentado es opcional
         pass
 

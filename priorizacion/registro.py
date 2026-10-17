@@ -85,6 +85,11 @@ CREATE TABLE IF NOT EXISTS explicacion_ia (
     PRIMARY KEY (huella_datos, modelo, version_prompt)
 );
 
+CREATE TABLE IF NOT EXISTS version_reglas (
+    numero INTEGER PRIMARY KEY, version TEXT NOT NULL UNIQUE, valores TEXT NOT NULL, cambios TEXT NOT NULL,
+    motivo TEXT NOT NULL, creada_por TEXT NOT NULL, creada_en TEXT NOT NULL, restaura INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS usuario (
     id_usuario TEXT PRIMARY KEY, nombre TEXT NOT NULL, rol TEXT NOT NULL, activo INTEGER NOT NULL DEFAULT 1,
     creado_en TEXT
@@ -117,6 +122,23 @@ def decisiones_a_objetos(df: pd.DataFrame) -> dict[str, list[Decision]]:
         ajuste = None if pd.isna(r.ajuste_puntaje) else float(r.ajuste_puntaje)
         out.setdefault(r.id_solicitud, []).append(Decision(date.fromisoformat(r.fecha_corte), r.prioridad_final, ajuste))
     return out
+COLUMNAS_VERSION_REGLAS = ["numero", "version", "valores", "cambios", "motivo", "creada_por", "creada_en", "restaura"]
+
+
+def versiones_reglas_df(filas: list[dict]) -> pd.DataFrame:
+    """Versiones de las reglas (F0014) con los mismos tipos en SQLite y PostgreSQL: valores y cambios como dict,
+    fecha como texto ISO y restaura como entero o None."""
+    salida = []
+    for f in filas:
+        valores, cambios = f["valores"], f["cambios"]
+        salida.append({**f, "valores": json.loads(valores) if isinstance(valores, str) else valores,
+                       "cambios": json.loads(cambios) if isinstance(cambios, str) else cambios,
+                       "creada_en": f["creada_en"] if isinstance(f["creada_en"], str)
+                       else f["creada_en"].isoformat(timespec="seconds"),
+                       "restaura": None if f["restaura"] is None or pd.isna(f["restaura"]) else int(f["restaura"])})
+    return pd.DataFrame(salida, columns=COLUMNAS_VERSION_REGLAS).astype({"restaura": object})
+
+
 COLUMNAS_ESTIMACION = ["id_solicitud", "fecha_calculo", "prioridad_vigente", "posicion_vigente", "total_cola",
                        "dias_estimados_min", "dias_estimados_max", "confianza", "metodo", "version_metodo", "publicable"]
 
@@ -126,6 +148,10 @@ class Registro(Protocol):
     ambas implementaciones (fechas como texto ISO), para que el resto del código no distinga una de otra."""
 
     def version(self) -> str: ...
+    def versiones_reglas(self) -> pd.DataFrame: ...
+    def version_reglas_vigente(self) -> dict | None: ...
+    def guardar_version_reglas(self, valores: dict, cambios: dict, motivo: str, usuario: str,
+                               restaura: int | None = None) -> int: ...
     def conexion(self): ...
     def candado(self, nombre: str): ...
     def reemplazar_serie(self, serie: pd.DataFrame, especialidad: str | None = None): ...
@@ -214,7 +240,8 @@ class RegistroSQLite:
         """Cambia cada vez que se escribe algo que afecta las vistas (sirve como llave de caché)."""
         with self.conexion() as c:
             partes = [c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in
-                      ("decision_clinica", "evidencia_externa", "mensaje_paciente", "corrida_nocturna")]
+                      ("decision_clinica", "evidencia_externa", "mensaje_paciente", "corrida_nocturna",
+                       "version_reglas")]
             partes.append(c.execute("SELECT COUNT(*) FROM evidencia_externa WHERE estado != 'pendiente'").fetchone()[0])
             partes.append(c.execute("SELECT COUNT(*) FROM mensaje_paciente WHERE estado != 'pendiente'").fetchone()[0])
             partes.append(c.execute("SELECT COUNT(*) FROM corrida_nocturna WHERE estado = 'completa'").fetchone()[0])
@@ -406,6 +433,33 @@ class RegistroSQLite:
 
     def usuarios(self) -> pd.DataFrame:
         return self.consulta("SELECT id_usuario, nombre, rol, activo FROM usuario ORDER BY id_usuario")
+
+    # -- versiones de las reglas (F0014) ---------------------------------------------------------
+    def versiones_reglas(self) -> pd.DataFrame:
+        with self.conexion() as c:
+            c.row_factory = sqlite3.Row
+            filas = [dict(f) for f in c.execute(f"SELECT {', '.join(COLUMNAS_VERSION_REGLAS)} FROM version_reglas "
+                                                "ORDER BY numero DESC")]
+        return versiones_reglas_df(filas)
+
+    def version_reglas_vigente(self) -> dict | None:
+        df = self.versiones_reglas()
+        return None if df.empty else df.iloc[0].to_dict()
+
+    def guardar_version_reglas(self, valores: dict, cambios: dict, motivo: str, usuario: str,
+                               restaura: int | None = None) -> int:
+        from .parametros import version_texto
+        if not cambios:
+            raise ValueError("Una versión nueva debe cambiar al menos un parámetro")
+        if len((motivo or "").strip()) < 5:
+            raise ValueError("El motivo es obligatorio")
+        with _CANDADOS.setdefault("hlf_version_reglas", threading.Lock()), self.conexion() as c:
+            numero = c.execute("SELECT coalesce(max(numero), 0) + 1 FROM version_reglas").fetchone()[0]
+            c.execute("INSERT INTO version_reglas VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                      (numero, version_texto(numero), json.dumps(valores, ensure_ascii=False),
+                       json.dumps(cambios, ensure_ascii=False), motivo.strip(), usuario,
+                       datetime.now().isoformat(timespec="seconds"), restaura))
+        return numero
 
     def activar_usuario(self, id_usuario: str, activo: bool) -> bool:
         with self.conexion() as c:

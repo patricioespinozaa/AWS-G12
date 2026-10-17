@@ -17,6 +17,7 @@ Detalle, dependencias y orden de implementación en [README.md](README.md).
 | [F0011](F0011-asistente-voz.md) | Asistente por voz | Amazon Connect + Lex + Polly, reutilizando el núcleo de F0010 | Implementado | M |
 | [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos | Subida segura a S3 y lectura con Textract y Bedrock citando el texto, siempre validada por una persona | Implementado | M |
 | [F0013](F0013-observabilidad-seguridad-costos.md) | Observabilidad, seguridad y costos | Alarmas, WAF, CloudTrail, presupuesto, respaldos, y una lista de verificación antes de usar datos reales | Implementado | M |
+| [F0014](F0014-configuracion-reglas.md) | Reglas configurables | Vista para cambiar pesos, umbrales y ventanas, simular el efecto y guardarlo como versión con motivo | Implementado | M |
 
 Tamaño: S (≤ ½ día), M (1 día), L (2 a 3 días).
 

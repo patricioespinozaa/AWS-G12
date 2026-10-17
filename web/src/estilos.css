@@ -213,3 +213,18 @@ table.propuesta th { text-align: left; color: var(--texto-suave); font-weight: 6
 table.propuesta td { padding: 3px 8px 3px 0; vertical-align: top; }
 table.propuesta q { background: var(--superficie-2); padding: 1px 4px; border-radius: 4px; }
 
+/* Configuración de las reglas (F0014) */
+table.reglas { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+table.reglas th { text-align: left; color: var(--texto-suave); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
+table.reglas td { padding: 6px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+table.reglas td.valor { white-space: nowrap; }
+table.reglas td.valor input { width: 96px; }
+table.reglas tr.cambiada { background: var(--superficie-2); }
+table.reglas td.distinto { font-weight: 600; }
+table.reglas input.invalido { border-color: #c0392b; }
+.reglas-acciones { position: sticky; top: 0; z-index: 2; }
+.reglas-acciones textarea { width: 100%; font: inherit; }
+.etiqueta-vigente { font-size: 0.72rem; background: var(--superficie-2); border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
+ul.cambios { margin: 0; padding-left: 18px; font-size: 0.86rem; }
+@media (max-width: 700px) { table.reglas th:nth-child(4), table.reglas td:nth-child(4) { display: none; } }
+
