@@ -9,11 +9,8 @@ uvicorn>=0.30
 
 # Base de datos PostgreSQL / AWS RDS y capa S3 + Athena (módulo db/)
 psycopg[binary]>=3.1
-boto3>=1.34              # S3, Athena y credenciales desde Secrets Manager (HLF_DB_SECRET_ID)
+boto3>=1.34              # S3, Athena, Secrets Manager y Amazon Bedrock (explicaciones con IA, F0008: solo AWS)
 pyarrow>=15              # Parquet tipado para Athena
 
 # Autenticación de la Administradora (F0007): verificación del JWT de Cognito (RS256)
 PyJWT[crypto]>=2.8
-
-# Explicaciones con IA generativa en Amazon Bedrock (se activa con LLM_PROVEEDOR=bedrock)
-anthropic[bedrock]>=0.40

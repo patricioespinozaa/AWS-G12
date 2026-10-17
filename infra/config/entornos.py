@@ -25,7 +25,8 @@ class Entorno:
     # Backend
     backend_cpu: int = 1024            # 1 vCPU
     backend_memoria_mib: int = 3072
-    llm_proveedor: str = ""            # "bedrock" lo activa F0008
+    # IA generativa (F0008): solo Amazon Bedrock. Perfil de inferencia permitido en la cuenta del hackatón
+    llm_proveedor: str = ""            # "bedrock" activa las explicaciones con IA
     bedrock_model_id: str = ""
     dias_logs: int = 7
     # Identidad (F0007): MFA opcional en la demo; obligatorio con datos reales
@@ -49,7 +50,8 @@ ENTORNOS = {
     # Desarrollo: barato y desechable. cdk destroy no deja nada.
     "dev": Entorno("dev"),
     # Demo del hackatón: los datos y la base sobreviven a un destroy accidental.
-    "demo": Entorno("demo", crear_rds=True, retener_datos=True, dias_logs=30),
+    "demo": Entorno("demo", crear_rds=True, retener_datos=True, dias_logs=30, llm_proveedor="bedrock",
+                    bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
 }
 
 

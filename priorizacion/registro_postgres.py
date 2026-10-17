@@ -297,6 +297,23 @@ class RegistroPostgres:
         with self._lock:
             return self._con().execute("SELECT priorizacion.fecha_corte()").fetchone()[0]
 
+    # -- explicaciones con IA (F0008) -----------------------------------------------------------------
+    # No suben la versión de la app: la caché no cambia lo que muestran las vistas
+    def explicacion_guardada(self, huella: str, modelo: str, version_prompt: str) -> str | None:
+        with self._lock:
+            fila = self._con().execute(
+                "SELECT texto FROM priorizacion.explicacion_ia WHERE huella_datos = %s AND modelo = %s "
+                "AND version_prompt = %s", (huella, modelo, version_prompt)).fetchone()
+        return fila[0] if fila else None
+
+    def guardar_explicacion(self, huella: str, modelo: str, version_prompt: str, id_solicitud: str,
+                            texto: str) -> None:
+        with self._lock:
+            self._con().execute(
+                "INSERT INTO priorizacion.explicacion_ia (huella_datos, modelo, version_prompt, id_solicitud, texto) "
+                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                (huella, modelo, version_prompt, id_solicitud, texto))
+
     # -- personas (F0007) ---------------------------------------------------------------------------
     def sincronizar_usuario(self, id_usuario: str, nombre: str) -> bool:
         """Crea o actualiza a la persona autenticada (rol `administracion`) en priorizacion.usuario, que es la FK
