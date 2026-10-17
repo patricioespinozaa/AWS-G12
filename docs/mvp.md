@@ -21,6 +21,7 @@ La primera vez, la API corre la consolidación nocturna sobre toda la historia (
 | Tarea | Comando |
 |---|---|
 | Tests (motor + API) | `python -m pytest` |
+| Consulta en lenguaje natural (F0009, solo en AWS) | Vista **Consulta**; preparar la KB: `python -m servicios.preparacion_kb` |
 | Consolidación con buzón (F0006) | `python -m servicios.nocturno --buzon data/buzon` |
 | Recalcular la historia completa | `python -m priorizacion.nocturno` |
 | Documentación interactiva de la API | http://127.0.0.1:8000/docs |

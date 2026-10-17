@@ -94,5 +94,24 @@ def correr(buzon=None, url: str | None = None, autoconfirmar: bool | None = None
     resultado = consolidar(Repositorio.desde_postgres(url), registro, origen="nocturno", afectados=afectados,
                            id_carga=ultima_carga, publicar=publicar, extra=extra)
     resultado["con_errores"] = any(e["estado"] == "fallida" for e in entregas)
+    resultado["kb"] = _sincronizar_kb(url, hubo_datos_nuevos=ultima_carga is not None, fecha_corte=resultado["fecha_corte"])
     return resultado
+
+
+def _sincronizar_kb(url: str | None, hubo_datos_nuevos: bool, fecha_corte: str) -> dict | None:
+    """F0009: la Knowledge Base del equipo clínico se regenera cuando entran datos nuevos (o si nunca se sincronizó o
+    quedó en otra fecha de corte). Un fallo aquí no invalida la noche: queda en el resumen y en consulta.ingesta_kb."""
+    if not config.KB_ID:
+        return None
+    try:
+        from servicios.consulta_ia import registro as RC
+        from servicios.preparacion_kb.proceso import preparar
+        with conectar(url) as conn:
+            vigente = RC.kb_vigente(conn, config.KB_ID)
+        if not hubo_datos_nuevos and vigente and vigente["fecha_corte"].isoformat() == fecha_corte:
+            return {"estado": "al_dia", "id_ingesta": vigente["id_ingesta"]}
+        return preparar(url)
+    except Exception as e:  # noqa: BLE001
+        log.exception("No se pudo sincronizar la Knowledge Base")
+        return {"estado": "fallida", "error": f"{type(e).__name__}: {str(e)[:300]}"}
 
