@@ -94,6 +94,13 @@ class RegistroPostgres:
                 self._tocar(conn)
 
     @contextmanager
+    def sin_version(self):
+        """La conexión compartida (autocommit) para lecturas o escrituras que no cambian lo que muestran las vistas,
+        como la bitácora de la consulta en lenguaje natural (F0009). No sube la versión de la app."""
+        with self._lock:
+            yield self._con()
+
+    @contextmanager
     def candado(self, nombre: str):
         """Exclusión mutua entre tareas (pg_advisory_lock en una conexión propia)."""
         conn = self._abrir()
