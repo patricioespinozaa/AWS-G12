@@ -1,0 +1,107 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "bienvenida",
+  "Metadata": {"name": "HLF asistente del paciente", "description": "F0011: consentimiento de grabación, asistente con Lex y transferencia a una persona"},
+  "Actions": [
+    {
+      "Identifier": "bienvenida",
+      "Type": "MessageParticipant",
+      "Parameters": {"Text": "Hola. Se comunica con el asistente virtual del Hospital Clínico Doctora Eloísa Díaz La Florida, para pacientes en lista de espera de especialidad. Si tiene una urgencia, corte y llame al ciento treinta y uno."},
+      "Transitions": {"NextAction": "consentimiento", "Errors": [{"NextAction": "sin_grabacion", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "consentimiento",
+      "Type": "GetParticipantInput",
+      "Parameters": {"Text": "Para mejorar la atención, ¿autoriza que grabemos esta llamada? Marque uno para sí, o dos para no.", "StoreInput": "False", "InputTimeLimitSeconds": "6"},
+      "Transitions": {
+        "NextAction": "sin_grabacion",
+        "Conditions": [
+          {"NextAction": "grabar", "Condition": {"Operator": "Equals", "Operands": ["1"]}},
+          {"NextAction": "sin_grabacion", "Condition": {"Operator": "Equals", "Operands": ["2"]}}
+        ],
+        "Errors": [
+          {"NextAction": "sin_grabacion", "ErrorType": "InputTimeLimitExceeded"},
+          {"NextAction": "sin_grabacion", "ErrorType": "NoMatchingCondition"},
+          {"NextAction": "sin_grabacion", "ErrorType": "NoMatchingError"}
+        ]
+      }
+    },
+    {
+      "Identifier": "grabar",
+      "Type": "UpdateContactRecordingBehavior",
+      "Parameters": {"RecordingBehavior": {"RecordedParticipants": ["Agent", "Customer"]}},
+      "Transitions": {"NextAction": "atributo_grabacion_si"}
+    },
+    {
+      "Identifier": "atributo_grabacion_si",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {"Attributes": {"grabacion": "si"}, "TargetContact": "Current"},
+      "Transitions": {"NextAction": "asistente", "Errors": [{"NextAction": "asistente", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "sin_grabacion",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {"Attributes": {"grabacion": "no"}, "TargetContact": "Current"},
+      "Transitions": {"NextAction": "asistente", "Errors": [{"NextAction": "asistente", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "asistente",
+      "Type": "ConnectParticipantWithLexBot",
+      "Parameters": {
+        "Text": "¿En qué le puedo ayudar? Puede preguntar por su lugar en la lista, sus citas o pedir hablar con una persona.",
+        "LexV2Bot": {"AliasArn": "${LexAliasArn}"},
+        "LexSessionAttributes": {"telefono": "$.CustomerEndpoint.Address", "contactId": "$.ContactId", "grabacion": "$.Attributes.grabacion"}
+      },
+      "Transitions": {"NextAction": "decidir", "Errors": [{"NextAction": "preparar_transferencia", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "decidir",
+      "Type": "Compare",
+      "Parameters": {"ComparisonValue": "$.Lex.SessionAttributes.transferir"},
+      "Transitions": {
+        "NextAction": "despedida",
+        "Conditions": [{"NextAction": "preparar_transferencia", "Condition": {"Operator": "Equals", "Operands": ["true"]}}],
+        "Errors": [{"NextAction": "despedida", "ErrorType": "NoMatchingCondition"}]
+      }
+    },
+    {
+      "Identifier": "preparar_transferencia",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {"motivo_transferencia": "$.Lex.SessionAttributes.motivo_transferencia", "resumen_transferencia": "$.Lex.SessionAttributes.resumen_transferencia", "urgente": "$.Lex.SessionAttributes.urgente"},
+        "TargetContact": "Current"
+      },
+      "Transitions": {"NextAction": "elegir_cola", "Errors": [{"NextAction": "elegir_cola", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "elegir_cola",
+      "Type": "UpdateContactTargetQueue",
+      "Parameters": {"QueueId": "${ColaArn}"},
+      "Transitions": {"NextAction": "transferir", "Errors": [{"NextAction": "sin_personas", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "transferir",
+      "Type": "TransferContactToQueue",
+      "Parameters": {},
+      "Transitions": {"NextAction": "sin_personas", "Errors": [{"NextAction": "sin_personas", "ErrorType": "QueueAtCapacity"}, {"NextAction": "sin_personas", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "sin_personas",
+      "Type": "MessageParticipant",
+      "Parameters": {"Text": "En este momento no hay personas disponibles. El equipo del hospital le devolverá el llamado. Si es urgente, llame al ciento treinta y uno."},
+      "Transitions": {"NextAction": "fin", "Errors": [{"NextAction": "fin", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "despedida",
+      "Type": "MessageParticipant",
+      "Parameters": {"Text": "Gracias por llamar. Que tenga un buen día."},
+      "Transitions": {"NextAction": "fin", "Errors": [{"NextAction": "fin", "ErrorType": "NoMatchingError"}]}
+    },
+    {
+      "Identifier": "fin",
+      "Type": "DisconnectParticipant",
+      "Parameters": {},
+      "Transitions": {}
+    }
+  ]
+}

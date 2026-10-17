@@ -19,6 +19,7 @@ from stacks.frontend import FrontendStack
 from stacks.ia import IaStack
 from stacks.identidad import IdentidadStack
 from stacks.red import RedStack
+from stacks.voz import VozStack
 
 RAIZ = Path(__file__).resolve().parent.parent
 
@@ -36,10 +37,14 @@ def construir(app: cdk.App, nombre_entorno: str, dist: Path = RAIZ / "web" / "di
                            consulta=consulta, asistente=asistente, env=env)
     frontend = FrontendStack(app, f"{entorno.id}-Frontend", entorno=entorno, red=red, backend=backend,
                              identidad=identidad, dist=dist, parametro_api=asistente.parametro_api, env=env)
-    for stack in (red, datos, identidad, ia, consulta, asistente, backend, frontend):
+    pilas = {"red": red, "datos": datos, "identidad": identidad, "ia": ia, "consulta": consulta, "asistente": asistente,
+             "backend": backend, "frontend": frontend}
+    if entorno.voz:                    # F0011: Connect y Lex en su propio stack (se despliega aparte si hace falta)
+        pilas["voz"] = VozStack(app, f"{entorno.id}-Voz", entorno=entorno, asistente=asistente, datos=datos, env=env)
+    for stack in pilas.values():
         cdk.Tags.of(stack).add("proyecto", "hlf-priorizacion")
         cdk.Tags.of(stack).add("entorno", entorno.nombre)
-    return {"red": red, "datos": datos, "identidad": identidad, "ia": ia, "consulta": consulta, "asistente": asistente, "backend": backend, "frontend": frontend}
+    return pilas
 
 
 if __name__ == "__main__":
