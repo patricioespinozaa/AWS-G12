@@ -1,21 +1,26 @@
+import {
+  Activity, AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, FileClock, FileText, Gavel, HelpCircle, LineChart,
+  Minus, Sparkles, Star, Stethoscope, UserRound,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ClinicoRespuesta, FichaPaciente, getJSON, postJSON, Registro, SerieRespuesta, useApi } from "../api";
 import Cascada from "../componentes/Cascada";
-import { Aviso, Cargando, Metrica, NivelBadge, Pestanas, Tabla } from "../componentes/comunes";
+import { Aviso, Cargando, Disponibilidad, Encabezado, Metrica, NivelBadge, Pestanas, Tabla } from "../componentes/comunes";
 import GraficoClinico from "../componentes/GraficoClinico";
 import GraficoEvolucion from "../componentes/GraficoEvolucion";
 import { useApp } from "../contexto";
-import { diasEntre, ETIQUETA_DISP, num, VALOR_NIVEL } from "../utils";
+import { diasEntre, num, VALOR_NIVEL } from "../utils";
 
 type IdPestana = "evolucion" | "clinico" | "ficha" | "explicacion" | "validacion" | "historial";
-const PESTANAS: { id: IdPestana; etiqueta: string }[] = [
-  { id: "evolucion", etiqueta: "📈 Evolución de la prioridad" },
-  { id: "clinico", etiqueta: "🩺 Línea de tiempo clínica" },
-  { id: "ficha", etiqueta: "🗂️ Ficha consolidada" },
-  { id: "explicacion", etiqueta: "🔎 Explicación y factores" },
-  { id: "validacion", etiqueta: "✅ Validación clínica" },
-  { id: "historial", etiqueta: "🧾 Historial y trazabilidad" },
+// Flujo de decisión (1 → 3) y luego las pestañas de consulta
+const PESTANAS: { id: IdPestana; etiqueta: string; icono: typeof Activity }[] = [
+  { id: "evolucion", etiqueta: "1 · Evolución", icono: LineChart },
+  { id: "explicacion", etiqueta: "2 · Por qué", icono: HelpCircle },
+  { id: "validacion", etiqueta: "3 · Decidir", icono: Gavel },
+  { id: "clinico", etiqueta: "Línea de tiempo clínica", icono: Activity },
+  { id: "ficha", etiqueta: "Ficha consolidada", icono: FileText },
+  { id: "historial", etiqueta: "Trazabilidad", icono: FileClock },
 ];
 const ROL: Record<string, string> = {
   base: "Base · decide nivel", evento: "Evento · decide nivel", medicion: "Medición · decide nivel",
@@ -40,29 +45,26 @@ export default function Ficha() {
 
   return (
     <>
-      <div className="encabezado">
-        <h1>🩺 Ficha del paciente</h1>
-        <p>Cómo evoluciona la prioridad de un paciente noche a noche, por qué cambia y qué decidió el equipo clínico.</p>
-      </div>
-      <div className="tarjeta compacta pila">
-        <div className="fila">
-          <span className="suave">Casos de referencia:</span>
-          {meta?.casos_referencia.map((c) => (
-            <button key={c.id_solicitud} className={`boton chico${c.id_solicitud === id ? " activo" : ""}`} onClick={() => navegar(`/ficha/${c.id_solicitud}${pestana === "evolucion" ? "" : `?pestana=${pestana}`}`)}>
-              {c.patron}
-            </button>
-          ))}
-        </div>
-        <label className="campo">
-          <span>Paciente</span>
-          <select value={id ?? ""} onChange={(e) => navegar(`/ficha/${e.target.value}`)}>
+      <Encabezado icono={Stethoscope} titulo="Ficha del paciente"
+        descripcion="Revisa cómo cambió su prioridad, entiende por qué y registra la decisión.">
+        <div className="selector-paciente">
+          <select value={id ?? ""} onChange={(e) => navegar(`/ficha/${e.target.value}`)} aria-label="Paciente">
             {(lista.data ?? []).map((s) => (
               <option key={s.id_solicitud} value={s.id_solicitud}>
-                {s.id_paciente} · {s.nombre} · {s.especialidad} · {s.cie10} {s.diagnostico}{s.caso_referencia ? `  ★ ${s.caso_referencia}` : ""}
+                {s.nombre} · {s.id_paciente} · {s.especialidad} · {s.cie10}{s.caso_referencia ? ` · ★ ${s.caso_referencia}` : ""}
               </option>
             ))}
           </select>
-        </label>
+        </div>
+      </Encabezado>
+      <div className="fila">
+        <small className="suave">Casos de referencia:</small>
+        {meta?.casos_referencia.map((c) => (
+          <button key={c.id_solicitud} className={`boton chico${c.id_solicitud === id ? " activo" : ""}`}
+            onClick={() => navegar(`/ficha/${c.id_solicitud}${pestana === "evolucion" ? "" : `?pestana=${pestana}`}`)}>
+            {c.patron}
+          </button>
+        ))}
       </div>
       {error && <Aviso tipo="error">{error}</Aviso>}
       {cargando && !data && <Cargando />}
@@ -70,6 +72,12 @@ export default function Ficha() {
         <>
           <Cabecera d={data} />
           <Pestanas opciones={PESTANAS} activa={pestana} onCambio={setPestana} />
+          {pestana === "evolucion" && !data.resultado.excluido && (
+            <div className="fila entre">
+              <small className="suave">Revisa cómo cambió la prioridad, luego por qué, y al final decide.</small>
+              <button className="boton chico" onClick={() => setPestana("validacion")}><Gavel size={14} /> Ir a decidir</button>
+            </div>
+          )}
           {pestana === "evolucion" && <TabEvolucion id={id} d={data} />}
           {pestana === "clinico" && <TabClinico id={id} />}
           {pestana === "ficha" && <TabFicha d={data} />}
@@ -85,64 +93,74 @@ export default function Ficha() {
 function Cabecera({ d }: { d: FichaPaciente }) {
   const s = d.solicitud;
   const r = d.resultado;
-  const sexo = s.sexo === "F" ? "mujer" : s.sexo === "M" ? "hombre" : s.sexo;
+  const sexo = s.sexo === "F" ? "Mujer" : s.sexo === "M" ? "Hombre" : s.sexo;
   return (
     <div className="tarjeta pila">
-      <div className="fila entre">
-        <div>
-          <h2 style={{ marginBottom: 2 }}>
+      <div className="banda-paciente">
+        <div className="banda-avatar"><UserRound size={24} /></div>
+        <div className="banda-datos">
+          <h2>
             {s.nombre} <small className="suave">{s.id_paciente}</small>
-            {s.caso_referencia && <> <span className="etiqueta-chip caso">★ {s.caso_referencia}</span></>}
+            {s.caso_referencia && <span className="etiqueta-chip caso"><Star size={11} />{s.caso_referencia}</span>}
           </h2>
-          <small>
-            {s.edad} años · {sexo} · {s.comuna} · {s.prevision} · NSE {s.nivel_socioeconomico} · {s.especialidad} / {s.sub_especialidad} ·{" "}
-            <b>{s.cie10} {s.diagnostico}</b> · riesgo basal <b>{s.riesgo_basal}</b> · {s.id_solicitud} · derivado desde {s.origen_derivacion} vía {s.canal_origen}
-          </small>
+          <div className="fila">
+            <span>{sexo}, {s.edad} años</span>
+            <span>{s.comuna}</span>
+            <span>{s.prevision}</span>
+            <span><b style={{ color: "var(--texto)" }}>{s.cie10} {s.diagnostico}</b></span>
+            <span>{s.especialidad} · {s.sub_especialidad}</span>
+            <span>Riesgo basal <b>{s.riesgo_basal}</b></span>
+          </div>
+          <div className="fila">
+            <span>Solicitud {s.id_solicitud}</span>
+            <span>Derivado desde {s.origen_derivacion} ({s.canal_origen})</span>
+            <span>NSE {s.nivel_socioeconomico}</span>
+          </div>
         </div>
       </div>
       <div className="cabecera-paciente">
-        <div className="dato-nivel"><span className="etiqueta">Lista congelada (prioridad inicial)</span><NivelBadge nivel={s.prioridad_inicial} /></div>
-        <div className="dato-nivel"><span className="etiqueta">Vigente (decisión clínica)</span><NivelBadge nivel={r.prioridad_vigente} /></div>
+        <div className="dato-nivel"><span className="etiqueta">Prioridad inicial</span><NivelBadge nivel={s.prioridad_inicial} /></div>
+        <div className="dato-nivel"><span className="etiqueta">Vigente</span><NivelBadge nivel={r.prioridad_vigente} /></div>
         <div className="dato-nivel">
           <span className="etiqueta">Propuesta al {d.corte}</span>
           {r.excluido ? <b className="suave">Fuera de la lista</b> : (
-            <>
-              <NivelBadge nivel={r.nivel_propuesto} />{" "}
-              <b className={r.cambio === "sube" ? "cambio-sube" : r.cambio === "baja" ? "cambio-baja" : "suave"}>
-                {r.cambio === "sube" ? "↑ sube" : r.cambio === "baja" ? "↓ baja" : "= se mantiene"}
-              </b>
-            </>
+            <span className="transicion">
+              <NivelBadge nivel={r.nivel_propuesto} />
+              {r.cambio === "sube" ? <b className="cambio-sube transicion"><ArrowUp size={14} /> sube</b>
+                : r.cambio === "baja" ? <b className="cambio-baja transicion"><ArrowDown size={14} /> baja</b>
+                : <span className="suave transicion"><Minus size={14} /> se mantiene</span>}
+            </span>
           )}
         </div>
-        <div className="dato-nivel"><span className="etiqueta">Puntaje de nivel · de orden</span>
+        <div className="dato-nivel"><span className="etiqueta">Puntaje nivel · orden</span>
           {r.excluido ? <span className="suave">—</span> : <><b>{num(r.puntaje_nivel)}</b> · {num(r.puntaje_vigente)}</>}
           {!r.excluido && r.ajuste_puntaje !== 0 && (
-            <div><small>Orden ajustado por la Administradora: motor {num(r.puntaje)} {r.ajuste_puntaje > 0 ? "+" : "−"} {num(Math.abs(r.ajuste_puntaje))}</small></div>
+            <div><small>Ajuste de la Administradora: motor {num(r.puntaje)} {r.ajuste_puntaje > 0 ? "+" : "−"} {num(Math.abs(r.ajuste_puntaje))}</small></div>
           )}
         </div>
-        <div className="dato-nivel" title={d.disponibilidad.accion ?? ""}>
+        <div className="dato-nivel">
           <span className="etiqueta">Disponibilidad para box</span>
-          {r.excluido ? <span className="suave">—</span> : ETIQUETA_DISP[d.disponibilidad.estado]}
+          {r.excluido ? <span className="suave">—</span> : <Disponibilidad estado={d.disponibilidad.estado} accion={d.disponibilidad.accion} />}
           {!r.excluido && d.disponibilidad.accion && <div><small>{d.disponibilidad.accion}</small></div>}
         </div>
-        <div className="dato-nivel" title="Rango según la posición vigente y las atenciones de las últimas 8 semanas. Uso interno: no se informa al paciente.">
-          <span className="etiqueta">Espera estimada (uso interno)</span>
+        <div className="dato-nivel" title="Según la posición vigente y las atenciones de las últimas 8 semanas. No se informa al paciente.">
+          <span className="etiqueta">Espera estimada (interna)</span>
           {r.excluido || !d.estimacion ? <span className="suave">Sin estimación</span> : (
             <>
               <b>{d.estimacion.dias_estimados_min}–{d.estimacion.dias_estimados_max} días</b>
-              <div><small>Posición {d.estimacion.posicion_vigente} de {d.estimacion.total_cola} · confianza {d.estimacion.confianza} · al {d.estimacion.fecha_calculo}</small></div>
+              <div><small>Posición {d.estimacion.posicion_vigente} de {d.estimacion.total_cola} · confianza {d.estimacion.confianza}</small></div>
             </>
           )}
         </div>
       </div>
       {r.excluido && <Aviso tipo="info">Fuera de la lista activa al {d.corte}: {r.motivo_exclusion}.</Aviso>}
-      {r.alerta && <Aviso tipo="error">⚠️ <b>Alerta para revisión clínica prioritaria.</b> {r.motivos_alerta.join(" · ")}</Aviso>}
+      {r.alerta && <Aviso tipo="error"><b>Alerta para revisión clínica prioritaria.</b> {r.motivos_alerta.join(" · ")}</Aviso>}
       {r.resguardo_aplicado && (
         <Aviso tipo="atencion">
-          El puntaje por sí solo indicaría <b>{r.nivel_calculado}</b>, pero no hay evidencia de mejora: se mantiene la prioridad vigente (<b>{r.prioridad_vigente}</b>).
+          El puntaje indicaría <b>{r.nivel_calculado}</b>, pero no hay evidencia de mejora: se mantiene <b>{r.prioridad_vigente}</b>.
         </Aviso>
       )}
-      <div className="resumen"><b>Resumen clínico consolidado.</b> {d.resumen}</div>
+      <div className="resumen">{d.resumen}</div>
     </div>
   );
 }
@@ -161,16 +179,13 @@ function TabEvolucion({ id, d }: { id: string; d: FichaPaciente }) {
   const hoy = [...s].reverse().find((p) => p.fecha <= corte);
   return (
     <div className="tarjeta pila">
-      <p className="suave">
-        Cada punto es una corrida nocturna: esa noche el sistema recalculó la prioridad solo con los datos disponibles hasta
-        entonces. Así se ve el efecto de actualizar la prioridad en el tiempo frente a la lista congelada.
-      </p>
+      <small className="suave">Cada punto es una noche: la prioridad se recalculó solo con los datos conocidos hasta entonces.</small>
       <div className="metricas">
         <Metrica etiqueta="Primer cambio de nivel" valor={primerCambio ? primerCambio.fecha : "sin cambios"}
           detalle={primerCambio ? `día ${diasEntre(d.solicitud.fecha_ingreso, primerCambio.fecha)} de espera · ${primerCambio.desde} → ${primerCambio.nivel_propuesto}` : undefined} />
         <Metrica etiqueta="Noches con propuesta sobre la lista congelada" valor={nochesSobre}
           detalle={`de ${s.length} noches en lista · la lista congelada lo mantuvo en ${inicial}`} />
-        <Metrica etiqueta="Noches con alerta" valor={nochesAlerta} />
+        <Metrica icono={AlertTriangle} tono={nochesAlerta ? "alta" : undefined} etiqueta="Noches con alerta" valor={nochesAlerta} />
         {hoy && (
           <Metrica destacada etiqueta={`Posición al ${hoy.fecha}`} valor={`${hoy.posicion_dinamica} de ${hoy.total_cola}`}
             detalle={`lista congelada: ${hoy.posicion_estatica} (${hoy.posicion_estatica - hoy.posicion_dinamica >= 0 ? "+" : ""}${hoy.posicion_estatica - hoy.posicion_dinamica} posiciones)`} />
@@ -183,7 +198,7 @@ function TabEvolucion({ id, d }: { id: string; d: FichaPaciente }) {
           { clave: "fecha", titulo: "Noche" },
           { clave: "desde", titulo: "De", render: (f) => <NivelBadge nivel={f.desde} /> },
           { clave: "nivel_propuesto", titulo: "A", render: (f) => <NivelBadge nivel={f.nivel_propuesto} /> },
-          { clave: "alerta", titulo: "Alerta", render: (f) => (f.alerta ? "⚠️" : "") },
+          { clave: "alerta", titulo: "Alerta", render: (f) => (f.alerta ? <span className="icono-alerta"><AlertTriangle size={14} /></span> : "") },
           { clave: "motivo_principal", titulo: "Motivo principal" },
           { clave: "puntaje_nivel", titulo: "Puntaje de nivel", num: true, render: (f) => num(f.puntaje_nivel) },
         ]} />
@@ -207,10 +222,7 @@ function TabFicha({ d }: { d: FichaPaciente }) {
   ];
   return (
     <div className="pila">
-      <Aviso tipo="info">
-        Toda la información disponible al {d.corte}, de todas las fuentes, organizada por tipo. Cada fila conserva su
-        referencia de origen; las fuentes no se modifican (consolidación de solo lectura).
-      </Aviso>
+      <small className="suave">Todo lo conocido al {d.corte}, de todas las fuentes. Cada fila conserva su referencia de origen.</small>
       <div className="grid-2">
         <div className="tarjeta pila">
           <h3>Diagnósticos</h3>
@@ -265,7 +277,7 @@ function TabExplicacion({ id, d }: { id: string; d: FichaPaciente }) {
       <div className="grid-2">
         <div className="tarjeta">
           <h3>Cómo se llega al nivel propuesto</h3>
-          <p className="suave">Solo la prioridad inicial y las señales clínicas deciden el nivel. El contexto (riesgo basal, edad, espera) ordena dentro del nivel.</p>
+          <small className="suave">Las señales clínicas deciden el nivel; el contexto (riesgo basal, edad, espera) solo ordena dentro del nivel.</small>
           {meta && <Cascada r={r} umbrales={meta.umbrales} />}
         </div>
         <div className="tarjeta pila">
@@ -273,18 +285,18 @@ function TabExplicacion({ id, d }: { id: string; d: FichaPaciente }) {
             <h3>Explicación</h3>
             <button className="boton" onClick={redactar} disabled={pidiendo}
               title="El LLM solo redacta a partir de los factores; se valida que no cite datos que no estén en ellos.">
-              ✨ {pidiendo ? "Redactando…" : "Redactar con IA generativa (Bedrock)"}
+              <Sparkles size={15} /> {pidiendo ? "Redactando…" : "Redactar con IA (Bedrock)"}
             </button>
           </div>
           <div className="explicacion">{ia ? ia.texto : d.explicacion}</div>
           <small>
             Fuente: {ia ? ia.fuente : "plantilla determinista"}{ia?.aviso ? ` · ${ia.aviso}` : ""}
           </small>
-          <small>Versión de reglas <code>{r.version_reglas}</code> · huella de datos <code>{d.huella_datos}</code> (permite reproducir el cálculo)</small>
+          <small>Reglas <code>{r.version_reglas}</code> · huella de datos <code>{d.huella_datos}</code></small>
         </div>
       </div>
       <div className="tarjeta">
-        <h3>Todos los factores, con su dato de origen</h3>
+        <h3>Factores y su dato de origen</h3>
         <Tabla filas={r.factores as unknown as Registro[]} columnas={[
           { clave: "descripcion", titulo: "Factor" },
           { clave: "categoria", titulo: "Rol", render: (f) => ROL[f.categoria] ?? f.categoria },
@@ -332,12 +344,11 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
   return (
     <div className="grid-2">
       <div className="tarjeta pila">
-        <h3>Decisión de la Administradora</h3>
-        <p>
-          Propuesta al <b>{corte}</b>: <NivelBadge nivel={r.nivel_propuesto} /> (vigente <NivelBadge nivel={r.prioridad_vigente} />).
-          La decisión rige desde esta fecha y queda registrada junto a la propuesta, sus factores y la huella de los datos.
-          Nunca se sobrescribe la prioridad inicial.
-        </p>
+        <h3>Registrar la decisión</h3>
+        <div className="fila">
+          <span className="suave">Vigente</span> <NivelBadge nivel={r.prioridad_vigente} />
+          <span className="suave">· propuesta al {corte}</span> <NivelBadge nivel={r.nivel_propuesto} />
+        </div>
         <div className="fila">
           {([["acepta", `Aceptar (${r.nivel_propuesto})`], ["ajusta", "Ajustar a otro nivel"], ["rechaza", `Rechazar (mantener ${r.prioridad_vigente})`]] as const).map(([k, t]) => (
             <label key={k} className="interruptor"><input type="radio" checked={decision === k} onChange={() => setDecision(k)} />{t}</label>
@@ -351,20 +362,24 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
           </label>
         )}
         <div className="pila-compacta">
-          <label className="campo"><span>Puntaje de orden (ordena la cola dentro del nivel)</span>
+          <label className="campo"><span>Puntaje de orden (dentro del nivel)</span>
             <input type="number" step="0.1" min={0} max={200} value={puntaje} onChange={(e) => setPuntaje(e.target.value)} style={{ width: 120 }} />
           </label>
           <small>
             Motor: <b>{num(r.puntaje)}</b>{r.ajuste_puntaje !== 0 && <> · ajuste vigente {r.ajuste_puntaje > 0 ? "+" : "−"}{num(Math.abs(r.ajuste_puntaje))}</>}.
-            {" "}Cambiarlo no altera el nivel ni el cálculo del motor: se guarda la diferencia, que rige hasta la próxima decisión.
+            {" "}Se guarda como ajuste; no cambia el nivel ni el cálculo del motor.
             {r.ajuste_puntaje !== 0 && <> <button className="boton chico" type="button" onClick={() => setPuntaje(String(r.puntaje))}>Volver al del motor</button></>}
           </small>
         </div>
         <label className="campo"><span>Motivo {motivoObligatorio ? "(obligatorio)" : "(opcional)"}</span>
           <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: revisado con el especialista; se adelanta la consulta" />
         </label>
-        <small>Se registra a nombre de la Administradora, junto a la propuesta, sus factores y la huella de los datos.</small>
-        <div><button className="boton primario" onClick={enviar} disabled={enviando}>{enviando ? "Registrando y reevaluando…" : "Registrar decisión"}</button></div>
+        <div className="fila">
+          <button className="boton primario" onClick={enviar} disabled={enviando}>
+            <CheckCircle2 size={15} /> {enviando ? "Registrando y reevaluando…" : "Registrar decisión"}
+          </button>
+          <small className="suave">Rige desde el {corte}. La prioridad inicial nunca se sobrescribe.</small>
+        </div>
         {estado && <Aviso tipo={estado.tipo}>{estado.texto}</Aviso>}
       </div>
       <div className="tarjeta pila">
@@ -377,7 +392,7 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
               : f.ajuste_puntaje === 0 ? `motor (${num(f.puntaje_calculado)})`
               : `${num(f.puntaje_calculado + f.ajuste_puntaje)} (${f.ajuste_puntaje > 0 ? "+" : "−"}${num(Math.abs(f.ajuste_puntaje))})`) },
             { clave: "motivo", titulo: "Motivo" }, { clave: "usuario", titulo: "Registró" }, { clave: "fecha_registro", titulo: "Registrada" }]} />
-        <small>Tras registrar, la serie nocturna del paciente y su cola se recalculan de inmediato: revisa la pestaña de evolución.</small>
+        <small className="suave">Al registrar, la serie del paciente y su cola se recalculan de inmediato.</small>
       </div>
     </div>
   );
@@ -395,12 +410,12 @@ function TabHistorial({ d }: { d: FichaPaciente }) {
     <div className="pila">
       <div className="tarjeta pila">
         <h3>Propuestas registradas</h3>
-        <small>La consolidación nocturna registra una propuesta cuando cambia el nivel o se enciende una alerta; al validar también se guarda una. Haz clic para ver su explicación y sus factores.</small>
+        <small className="suave">Se registra una propuesta cada vez que cambia el nivel o se enciende una alerta. Clic para ver sus factores.</small>
         <Tabla filas={[...d.propuestas].reverse()} onFila={setSel} vacia="Sin propuestas registradas." alta
           columnas={[{ clave: "id_propuesta", titulo: "#", num: true }, { clave: "fecha_corte", titulo: "Noche" }, { clave: "origen", titulo: "Origen" },
             { clave: "prioridad_vigente", titulo: "Vigente", render: (f) => <NivelBadge nivel={f.prioridad_vigente} /> },
             { clave: "prioridad_propuesta", titulo: "Propuesta", render: (f) => <NivelBadge nivel={f.prioridad_propuesta} /> },
-            { clave: "alerta", titulo: "Alerta", render: (f) => (f.alerta ? "⚠️" : "") },
+            { clave: "alerta", titulo: "Alerta", render: (f) => (f.alerta ? <span className="icono-alerta"><AlertTriangle size={14} /></span> : "") },
             { clave: "puntaje_nivel", titulo: "Puntaje nivel", num: true },
             { clave: "version_reglas", titulo: "Reglas" }, { clave: "huella_datos", titulo: "Huella", render: (f) => <code>{f.huella_datos}</code> }]} />
       </div>
