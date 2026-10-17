@@ -82,9 +82,9 @@ ESTRUCTURA = {
     "canal": {
         "tablas": ("intencion", "contacto_paciente", "consentimiento", "conversacion", "verificacion_identidad",
                    "turno", "divulgacion", "derivacion_humana", "mensaje_paciente", "evidencia_externa",
-                   "notificacion"),
+                   "notificacion", "codigo_verificacion", "lectura_examen"),
         "vistas": ("v_consentimiento_vigente", "v_ia_estado_solicitud", "v_ia_citas", "v_ia_registros"),
-        "solo_insercion": ("consentimiento", "turno", "divulgacion"),
+        "solo_insercion": ("consentimiento", "turno", "divulgacion", "lectura_examen"),
     },
     "consulta": {
         "tablas": ("ingesta_kb", "documento_kb", "pregunta", "fuente_respuesta"),
@@ -113,6 +113,8 @@ INFORMATIVOS_APP = {
     "Decisiones clínicas": "SELECT count(*) FROM priorizacion.decision_clinica",
     "Citas agendadas": "SELECT count(*) FROM priorizacion.cita_agendada",
     "Conversaciones (WhatsApp y voz)": "SELECT count(*) FROM canal.conversacion",
+    "Lecturas de exámenes propuestas por la IA (F0012)": "SELECT count(*) FROM canal.lectura_examen",
+    "Exámenes externos pendientes de validar": "SELECT count(*) FROM canal.evidencia_externa WHERE estado = 'pendiente'",
     "Preguntas del equipo clínico": "SELECT count(*) FROM consulta.pregunta",
     "Fecha de corte (reloj)": "SELECT modo || ' · ' || priorizacion.fecha_corte() FROM priorizacion.reloj",
 }

@@ -307,3 +307,32 @@ def test_voz_connect_lex_y_grabacion_solo_con_consentimiento(plantillas):
     t["voz"].has_resource_properties("AWS::Connect::InstanceStorageConfig", {"ResourceType": "CALL_RECORDINGS"})
     assert _recursos(t["voz"], "AWS::Connect::Queue") and _recursos(t["voz"], "AWS::Connect::IntegrationAssociation")
     assert not _recursos(t["voz"], "AWS::Connect::PhoneNumber")               # tiene costo: se activa a propósito
+
+
+def test_examenes_cifrados_escaneados_y_sin_descarga_de_amenazas(plantillas):
+    """F0012: clave KMS propia con rotación; subida directa al bucket (CORS solo POST); un objeto con amenaza no se
+    descarga; con GuardDuty, el plan protege solo el prefijo de evidencias y su resultado llega a una Lambda sin VPC."""
+    entorno, t = plantillas
+    claves = _recursos(t["asistente"], "AWS::KMS::Key").values()
+    assert len(claves) == 2 and all(k["Properties"]["EnableKeyRotation"] for k in claves)
+    (bucket,) = [b for b in _recursos(t["datos"], "AWS::S3::Bucket").values() if "CorsConfiguration" in b["Properties"]]
+    (regla,) = bucket["Properties"]["CorsConfiguration"]["CorsRules"]
+    assert regla["AllowedMethods"] == ["POST"]
+    politica = json.dumps(_recursos(t["datos"], "AWS::S3::BucketPolicy"))
+    assert "THREATS_FOUND" in politica and "SinDescargaDeArchivosConAmenaza" in politica
+    tarea = next(x for x in _recursos(t["backend"], "AWS::ECS::TaskDefinition").values()
+                 if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
+    variables = {v["Name"]: v.get("Value") for v in tarea["Properties"]["ContainerDefinitions"][0]["Environment"]}
+    planes = _recursos(t["asistente"], "AWS::GuardDuty::MalwareProtectionPlan")
+    if entorno == "demo":
+        (plan,) = planes.values()
+        assert "canal/evidencias/" in json.dumps(plan["Properties"]["ProtectedResource"])
+        assert plan["Properties"]["Actions"]["Tagging"]["Status"] == "ENABLED"
+        (regla_ev,) = _recursos(t["asistente"], "AWS::Events::Rule").values()
+        assert regla_ev["Properties"]["EventPattern"]["source"] == ["aws.guardduty"]
+        (funcion,) = [f for f in _recursos(t["asistente"], "AWS::Lambda::Function").values()
+                      if f["Properties"].get("Handler") == "lambda_escaneo.handler"]
+        assert "VpcConfig" not in funcion["Properties"]
+        assert "HLF_EXAMENES_KMS_KEY_ID" in variables and variables.get("HLF_EXAMENES_ESCANEO") == "1"
+    else:
+        assert not planes

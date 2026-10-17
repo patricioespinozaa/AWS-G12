@@ -50,3 +50,5 @@ GRANT SELECT (es_principal) ON canal.contacto_paciente TO hlf_asistente_ia;   --
 -- Las herramientas registran mensajes y exámenes con la fecha de corte de los datos
 GRANT USAGE ON SCHEMA priorizacion TO hlf_asistente_ia;
 GRANT EXECUTE ON FUNCTION priorizacion.fecha_corte() TO hlf_asistente_ia;
+-- Exámenes externos (F0012): la lectura de la IA la registra la API (hlf_app); el asistente solo crea la evidencia
+GRANT SELECT, INSERT ON canal.lectura_examen TO hlf_app;
