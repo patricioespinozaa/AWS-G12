@@ -37,36 +37,64 @@ INSERT INTO priorizacion.usuario (id_usuario, nombre, rol) VALUES
 ON CONFLICT (id_usuario) DO NOTHING;
 
 -- Reloj: la fecha de corte que usa toda la base -------------------------------------------------------
--- modo 'real' = hoy. modo 'demo' = una fecha simulada que EventBridge Scheduler avanza (flujo D), para que la
--- posición en la cola cambie a medida que "pasa el tiempo". Una sola fila (id = 1).
+-- La fecha de corte es la de los DATOS (F0006): el fin del periodo de la última carga aplicada. Evaluar al día real
+-- con datos de un mes atrás haría crecer la espera y vencer ventanas de eventos sin saber qué pasó.
+--   modo 'datos' (por defecto): la mayor fecha de corte entre las versiones aplicadas (raw.carga_lote.fecha_corte).
+--   modo 'manual': una fecha fija, para ensayos y pruebas (python -m db reloj --fijar AAAA-MM-DD).
+-- Una sola fila (id = 1).
 CREATE TABLE IF NOT EXISTS priorizacion.reloj (
-    id             smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    modo           text NOT NULL CHECK (modo IN ('real', 'demo')),
-    fecha_demo     date,
-    dias_por_tick  smallint NOT NULL DEFAULT 1 CHECK (dias_por_tick > 0),
-    actualizado_en timestamptz NOT NULL DEFAULT now(),
-    actualizado_por text NOT NULL REFERENCES priorizacion.usuario (id_usuario),
-    CONSTRAINT reloj_demo_con_fecha CHECK (modo = 'real' OR fecha_demo IS NOT NULL)
+    id              smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    modo            text NOT NULL,
+    fecha_manual    date,
+    actualizado_en  timestamptz NOT NULL DEFAULT now(),
+    actualizado_por text NOT NULL REFERENCES priorizacion.usuario (id_usuario)
 );
-COMMENT ON TABLE priorizacion.reloj IS 'Fecha de corte vigente (real o simulada para la demo). Una sola fila';
-INSERT INTO priorizacion.reloj (id, modo, actualizado_por) VALUES (1, 'real', 'sistema') ON CONFLICT (id) DO NOTHING;
+COMMENT ON TABLE priorizacion.reloj IS 'Cómo se obtiene la fecha de corte: de los datos (por defecto) o fija (ensayos). Una sola fila';
 
--- SECURITY DEFINER: las vistas del asistente la usan sin que su rol pueda leer priorizacion
+-- Bases creadas con el reloj de F0003 (modos real/demo que avanzaban solos): se convierten al modelo nuevo
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'priorizacion'
+               AND table_name = 'reloj' AND column_name = 'fecha_demo') THEN
+        ALTER TABLE priorizacion.reloj RENAME COLUMN fecha_demo TO fecha_manual;
+    END IF;
+    ALTER TABLE priorizacion.reloj DROP COLUMN IF EXISTS dias_por_tick;
+    ALTER TABLE priorizacion.reloj DROP CONSTRAINT IF EXISTS reloj_modo_check;
+    ALTER TABLE priorizacion.reloj DROP CONSTRAINT IF EXISTS reloj_demo_con_fecha;
+    UPDATE priorizacion.reloj SET modo = CASE modo WHEN 'demo' THEN 'manual' WHEN 'real' THEN 'datos' ELSE modo END
+    WHERE modo IN ('real', 'demo');
+    ALTER TABLE priorizacion.reloj DROP CONSTRAINT IF EXISTS reloj_modo_valido;
+    ALTER TABLE priorizacion.reloj ADD CONSTRAINT reloj_modo_valido CHECK (modo IN ('datos', 'manual'));
+    ALTER TABLE priorizacion.reloj DROP CONSTRAINT IF EXISTS reloj_manual_con_fecha;
+    ALTER TABLE priorizacion.reloj ADD CONSTRAINT reloj_manual_con_fecha CHECK (modo = 'datos' OR fecha_manual IS NOT NULL);
+END
+$$;
+INSERT INTO priorizacion.reloj (id, modo, actualizado_por) VALUES (1, 'datos', 'sistema') ON CONFLICT (id) DO NOTHING;
+DROP FUNCTION IF EXISTS priorizacion.avanzar_reloj(integer, text);
+
+-- SECURITY DEFINER: las vistas del asistente la usan sin que su rol pueda leer priorizacion ni raw.
+-- plpgsql (no sql): no exige que raw.carga_lote.fecha_corte exista al crear la función.
 CREATE OR REPLACE FUNCTION priorizacion.fecha_corte() RETURNS date
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
-    SELECT coalesce((SELECT CASE WHEN modo = 'demo' THEN fecha_demo ELSE current_date END
-                     FROM priorizacion.reloj WHERE id = 1), current_date)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
+DECLARE
+    v_modo text;
+    v_manual date;
+    v_datos date;
+BEGIN
+    SELECT modo, fecha_manual INTO v_modo, v_manual FROM priorizacion.reloj WHERE id = 1;
+    IF v_modo = 'manual' THEN
+        RETURN v_manual;
+    END IF;
+    BEGIN
+        SELECT max(fecha_corte) INTO v_datos FROM raw.carga_lote WHERE estado = 'aplicada';
+    EXCEPTION WHEN undefined_column OR undefined_table THEN
+        v_datos := NULL;
+    END;
+    RETURN coalesce(v_datos, current_date);
+END
 $$;
-COMMENT ON FUNCTION priorizacion.fecha_corte() IS 'Hoy, o la fecha simulada si el reloj está en modo demo';
-
--- La llama la Lambda del reloj de la demo en cada tick. En modo real no hace nada y devuelve NULL.
-CREATE OR REPLACE FUNCTION priorizacion.avanzar_reloj(p_dias integer DEFAULT NULL, p_usuario text DEFAULT 'sistema')
-RETURNS date LANGUAGE sql AS $$
-    UPDATE priorizacion.reloj
-    SET fecha_demo = fecha_demo + coalesce(p_dias, dias_por_tick), actualizado_en = now(), actualizado_por = p_usuario
-    WHERE id = 1 AND modo = 'demo'
-    RETURNING fecha_demo
-$$;
+COMMENT ON FUNCTION priorizacion.fecha_corte() IS
+    'Fecha de corte: la de los datos (fin del periodo de la última carga aplicada) o la fija del modo manual';
 
 -- Proceso nocturno --------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS priorizacion.corrida_nocturna (

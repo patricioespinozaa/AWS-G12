@@ -213,6 +213,30 @@ def leer_manifiesto(s3, cfg: Config) -> dict:
     return json.loads(cuerpo)
 
 
+def descargar_csv(s3, cfg: Config, destino: Path, progreso=print) -> list[str]:
+    """Baja los CSV publicados a `destino` y verifica cada uno contra el sha256 del manifiesto.
+
+    Lo usa el contenedor del backend al arrancar (docker/backend/entrypoint.sh): los datos del hospital
+    nunca van dentro de la imagen. Primero verifica todos los archivos y solo entonces escribe: si uno no
+    coincide con el manifiesto, no queda en disco un dataset a medias.
+    """
+    huellas_publicadas = leer_manifiesto(s3, cfg)["csv_sha256"]
+    esperados = {t.archivo for t in TABLAS if t.archivo}
+    if faltan := esperados - set(huellas_publicadas):
+        raise ErrorCarga(f"El manifiesto no incluye {', '.join(sorted(faltan))}: vuelve a correr athena publicar")
+    verificados: dict[str, bytes] = {}
+    for archivo, huella in sorted(huellas_publicadas.items()):
+        cuerpo = s3.get_object(Bucket=cfg.bucket, Key=cfg.clave("csv", archivo))["Body"].read()
+        if _sha256(cuerpo) != huella:
+            raise ErrorCarga(f"{archivo}: el sha256 no coincide con el manifiesto publicado")
+        verificados[archivo] = cuerpo
+    destino.mkdir(parents=True, exist_ok=True)
+    for archivo, cuerpo in verificados.items():
+        (destino / archivo).write_bytes(cuerpo)
+        progreso(f"  {archivo:<22} {len(cuerpo) / 1024:>8.1f} KB")
+    return list(verificados)
+
+
 # -- DDL de Athena -----------------------------------------------------------------------------------
 def ddl(cfg: Config) -> list[str]:
     """Base y tablas externas sobre el Parquet. DROP de una tabla externa no borra datos en S3."""
@@ -272,6 +296,76 @@ def exportar_historial(conn, s3, cfg: Config, desde: date, hasta: date, progreso
         exportadas[h.nombre] = len(fechas)
         progreso(f"  {h.nombre:<18} {len(fechas):>4} noches ({desde} a {hasta})")
     return exportadas
+
+
+# -- Publicación desde RDS (F0006) -------------------------------------------------------------------
+def leer_rds(conn) -> dict[str, list[tuple]]:
+    """raw tal como está en RDS (la suma de todas las versiones), en el orden de columnas de cada Tabla."""
+    return {t.nombre: conn.execute(f"SELECT {', '.join(c for c, _ in t.columnas)} FROM raw.{t.nombre} "
+                                   f"ORDER BY {', '.join(t.llave)}").fetchall() for t in TABLAS}
+
+
+def subir_desde_rds(conn, s3, cfg: Config, progreso=print) -> dict:
+    """Publica el Parquet de raw desde RDS. Con cargas por periodo (F0005) los CSV de una exportación son solo
+    un periodo: la copia de consulta se arma con lo que hay en la base, no con un archivo. Idempotente."""
+    datos = leer_rds(conn)
+    try:
+        previo = leer_manifiesto(s3, cfg)
+    except Exception:  # noqa: BLE001 — primera publicación
+        previo = {}
+    version = conn.execute("SELECT coalesce(max(version), 0) FROM raw.carga_lote WHERE estado = 'aplicada'").fetchone()[0]
+    manifiesto = {"generado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  "origen": f"rds (versión de datos {version})", "filas": {},
+                  # los CSV publicados (si los hay) siguen siendo los de la última publicación desde archivos
+                  "csv_sha256": previo.get("csv_sha256", {}), "parquet_sha256": {}}
+    subidos = []
+    for t in TABLAS:
+        cuerpo = parquet(t, datos[t.nombre])
+        manifiesto["filas"][t.nombre] = len(datos[t.nombre])
+        manifiesto["parquet_sha256"][t.nombre] = _sha256(cuerpo)
+        if _subir_si_cambio(s3, cfg, cfg.clave("parquet", t.nombre, f"{t.nombre}.parquet"), cuerpo,
+                            "application/vnd.apache.parquet"):
+            subidos.append(t.nombre)
+    s3.put_object(Bucket=cfg.bucket, Key=cfg.clave("parquet", "_manifiesto.json"),
+                  Body=json.dumps(manifiesto, ensure_ascii=False, indent=2).encode("utf-8"),
+                  ContentType="application/json")
+    progreso(f"  raw desde RDS: {len(subidos)} tablas cambiaron ({', '.join(subidos) or 'ninguna'})")
+    return {"manifiesto": manifiesto, "subidos": subidos}
+
+
+def exportar_noches(conn, s3, cfg: Config, noches: set, fecha_corte: date, progreso=print) -> dict[str, int]:
+    """Exporta solo las particiones que cambiaron: las noches tocadas por la consolidación y la estimación del
+    corte. Exportar el historial completo cada noche subiría cientos de particiones iguales."""
+    fechas = {"serie_nocturna": sorted(date.fromisoformat(str(n)) for n in noches),
+              "estimacion_espera": [fecha_corte]}
+    exportadas: dict[str, int] = {}
+    for h in HISTORIAL:
+        n = 0
+        for f in fechas[h.nombre]:
+            filas = conn.execute(h.sql, {"fecha": f}).fetchall()
+            if filas and _subir_si_cambio(s3, cfg, cfg.clave("historial", h.nombre, f"fecha={f.isoformat()}",
+                                                              f"{h.nombre}.parquet"),
+                                          _parquet_historial(h, filas), "application/vnd.apache.parquet"):
+                n += 1
+        exportadas[h.nombre] = n
+        progreso(f"  {h.nombre:<18} {n:>4} particiones subidas")
+    return exportadas
+
+
+def publicador_consolidacion(cfg: Config | None = None, url: str | None = None):
+    """La función `publicar(noches, fecha_corte)` del pipeline de consolidación (priorizacion/consolidacion.py).
+    Las tablas de Athena ya existen (python -m db athena publicar); el historial usa partition projection, así
+    que cada noche nueva se ve sin DDL."""
+    from .conexion import conectar
+    cfg = cfg or Config.desde_entorno()
+
+    def publicar(noches: set, fecha_corte: date) -> dict:
+        s3, _ = clientes(cfg)
+        with conectar(url) as conn:
+            raw = subir_desde_rds(conn, s3, cfg, progreso=lambda *_: None)
+            historial = exportar_noches(conn, s3, cfg, noches, fecha_corte, progreso=lambda *_: None)
+        return {"raw_subidas": raw["subidos"], "particiones": historial}
+    return publicar
 
 
 # -- Consultas ---------------------------------------------------------------------------------------
@@ -408,13 +502,15 @@ def verificar(athena: Athena, manifiesto: dict) -> list[Chequeo]:
     return chequeos
 
 
-def publicar(cfg: Config, data_dir: Path, progreso=print, s3=None, athena: Athena | None = None) -> list[Chequeo]:
-    """Sube CSV y Parquet a S3, (re)crea las tablas en Athena y verifica. Es el comando del día a día."""
+def publicar(cfg: Config, data_dir: Path | None, progreso=print, s3=None, athena: Athena | None = None,
+             conn_rds=None) -> list[Chequeo]:
+    """Sube CSV y Parquet a S3, (re)crea las tablas en Athena y verifica. Con `conn_rds`, el Parquet sale de lo
+    que hay en RDS (la suma de las cargas por periodo) en vez de una carpeta de CSV."""
     if s3 is None or athena is None:
         s3_def, athena_def = clientes(cfg)
         s3 = s3 or s3_def
         athena = athena or Athena(cfg, athena_def)
-    res = subir(s3, cfg, data_dir, progreso)
+    res = subir_desde_rds(conn_rds, s3, cfg, progreso) if conn_rds is not None else subir(s3, cfg, data_dir, progreso)
     progreso("Tablas en Athena:")
     crear_tablas(athena, progreso)
     return verificar(athena, res["manifiesto"])

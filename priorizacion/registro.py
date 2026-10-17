@@ -1,4 +1,8 @@
-"""Registro persistente (SQLite en el MVP; RDS/DynamoDB en AWS).
+"""Registro persistente: lo que genera la app (propuestas, decisiones, serie nocturna, canal del paciente).
+
+Dos implementaciones con la misma interfaz (`Registro`), elegidas con `crear_registro()` (docs/feature/F0005):
+- RegistroSQLite: modo local, respaldo de la demo (este archivo).
+- RegistroPostgres: RDS, esquemas priorizacion y canal (registro_postgres.py).
 
 Tablas del sistema, separadas de los datos fuente (que nunca se modifican):
 - serie_nocturna: resultado de cada corrida nocturna, por solicitud y noche.
@@ -11,14 +15,19 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
 import pandas as pd
 
 from . import config
 from .motor import Decision, Resultado
+
+if TYPE_CHECKING:
+    from .archivos import ArchivoGuardado
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS serie_nocturna (
@@ -66,17 +75,88 @@ CREATE TABLE IF NOT EXISTS mensaje_paciente (
 
 CREATE TABLE IF NOT EXISTS corrida_nocturna (
     id_corrida INTEGER PRIMARY KEY AUTOINCREMENT, inicio TEXT, fin TEXT, desde TEXT, hasta TEXT,
-    alcance TEXT, version_reglas TEXT, n_evaluaciones INTEGER, n_propuestas INTEGER, segundos REAL
+    alcance TEXT, version_reglas TEXT, n_evaluaciones INTEGER, n_propuestas INTEGER, segundos REAL,
+    origen TEXT, estado TEXT, id_carga INTEGER, detalle TEXT, error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS estimacion_espera (
+    id_solicitud TEXT, fecha_calculo TEXT, prioridad_vigente TEXT, posicion_vigente INTEGER, total_cola INTEGER,
+    dias_estimados_min INTEGER, dias_estimados_max INTEGER, confianza TEXT, metodo TEXT, version_metodo TEXT,
+    publicable INTEGER, PRIMARY KEY (id_solicitud, fecha_calculo)
 );
 """
+# Columnas agregadas después de la primera versión (F0006): bases SQLite locales existentes
+COLUMNAS_NUEVAS = {"corrida_nocturna": [("origen", "TEXT"), ("estado", "TEXT"), ("id_carga", "INTEGER"),
+                                        ("detalle", "TEXT"), ("error", "TEXT")]}
+COLUMNAS_CORRIDA = ["id_corrida", "inicio", "fin", "desde", "hasta", "alcance", "version_reglas", "n_evaluaciones",
+                    "n_propuestas", "segundos", "origen", "estado", "id_carga", "detalle", "error"]
+COLUMNAS_ESTIMACION = ["id_solicitud", "fecha_calculo", "prioridad_vigente", "posicion_vigente", "total_cola",
+                       "dias_estimados_min", "dias_estimados_max", "confianza", "metodo", "version_metodo", "publicable"]
 
 
-class Registro:
+class Registro(Protocol):
+    """Lo que la API y el motor necesitan del registro. Los DataFrames tienen las mismas columnas y tipos en
+    ambas implementaciones (fechas como texto ISO), para que el resto del código no distinga una de otra."""
+
+    def version(self) -> str: ...
+    def conexion(self): ...
+    def candado(self, nombre: str): ...
+    def reemplazar_serie(self, serie: pd.DataFrame, especialidad: str | None = None): ...
+    def serie(self, id_solicitud: str | None = None, especialidad: str | None = None) -> pd.DataFrame: ...
+    def serie_resumen(self) -> pd.DataFrame: ...
+    def hay_serie(self) -> bool: ...
+    def guardar_propuesta(self, r: Resultado, huella: str, explicacion: str, fuente_explicacion: str,
+                          origen: str, con=None) -> int: ...
+    def borrar_propuestas_nocturnas(self, id_solicitud: str | None = None, con=None): ...
+    def propuestas(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
+    def factores(self, id_propuesta: int) -> pd.DataFrame: ...
+    def registrar_decision(self, id_propuesta: int, r: Resultado, decision: str, prioridad_final: str,
+                           motivo: str, usuario: str) -> int: ...
+    def decisiones(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
+    def decisiones_por_solicitud(self) -> dict[str, list[Decision]]: ...
+    def agregar_evidencia(self, id_paciente: str, fecha_examen: date, tipo: str, valor: float, lugar: str,
+                          archivo: "ArchivoGuardado | None", fecha_recepcion: date) -> str: ...
+    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str): ...
+    def evidencias(self) -> pd.DataFrame: ...
+    def agregar_mensaje(self, id_paciente: str, fecha: date, tipo: str, detalle: str) -> str: ...
+    def revisar_mensaje(self, id_mensaje: str, estado: str, revisado_por: str): ...
+    def mensajes(self) -> pd.DataFrame: ...
+    def registrar_corrida(self, **kw): ...
+    def corridas(self) -> pd.DataFrame: ...
+    # F0006: consolidación
+    def fecha_corte(self) -> date | None: ...
+    def modo_fecha(self) -> str: ...
+    def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]): ...
+    def iniciar_corrida(self, origen: str, alcance: str, desde: date, hasta: date, id_carga: int | None = None) -> int: ...
+    def terminar_corrida(self, id_corrida: int, estado: str, n_evaluaciones: int = 0, n_propuestas: int = 0,
+                         detalle: dict | None = None, error: str | None = None): ...
+    def corrida_en_curso(self) -> bool: ...
+    def guardar_estimaciones(self, fecha: date, estimaciones: pd.DataFrame): ...
+    def estimaciones(self, id_solicitud: str | None = None) -> pd.DataFrame: ...
+
+
+def crear_registro() -> Registro:
+    """RegistroPostgres si hay RDS configurada (HLF_DATABASE_URL o HLF_DB_SECRET_ID); si no, SQLite local."""
+    if config.usa_rds():
+        from .registro_postgres import RegistroPostgres
+        return RegistroPostgres()
+    return RegistroSQLite()
+
+
+_CANDADOS: dict[str, threading.Lock] = {}
+
+
+class RegistroSQLite:
     def __init__(self, ruta: Path = config.DB_PATH):
         self.ruta = Path(ruta)
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
         with self.conexion() as c:
             c.executescript(ESQUEMA)
+            for tabla, columnas in COLUMNAS_NUEVAS.items():
+                existentes = {r[1] for r in c.execute(f"PRAGMA table_info({tabla})")}
+                for nombre, tipo in columnas:
+                    if nombre not in existentes:
+                        c.execute(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}")
 
     @contextmanager
     def conexion(self):
@@ -86,6 +166,13 @@ class Registro:
             con.commit()
         finally:
             con.close()
+
+    @contextmanager
+    def candado(self, nombre: str):
+        """Exclusión mutua (en SQLite solo hay un proceso: basta un candado de hilo)."""
+        candado = _CANDADOS.setdefault(nombre, threading.Lock())
+        with candado:
+            yield
 
     def consulta(self, sql: str, params=()) -> pd.DataFrame:
         with self.conexion() as c:
@@ -98,6 +185,7 @@ class Registro:
                       ("decision_clinica", "evidencia_externa", "mensaje_paciente", "corrida_nocturna")]
             partes.append(c.execute("SELECT COUNT(*) FROM evidencia_externa WHERE estado != 'pendiente'").fetchone()[0])
             partes.append(c.execute("SELECT COUNT(*) FROM mensaje_paciente WHERE estado != 'pendiente'").fetchone()[0])
+            partes.append(c.execute("SELECT COUNT(*) FROM corrida_nocturna WHERE estado = 'completa'").fetchone()[0])
         return "-".join(map(str, partes))
 
     # -- serie nocturna ------------------------------------------------------------------------
@@ -199,11 +287,11 @@ class Registro:
         return f"{prefijo}-{n:05d}"
 
     def agregar_evidencia(self, id_paciente: str, fecha_examen: date, tipo: str, valor: float, lugar: str,
-                          archivo: str | None, fecha_recepcion: date) -> str:
+                          archivo: "ArchivoGuardado | None", fecha_recepcion: date) -> str:
         with self.conexion() as c:
             ide = self._siguiente_id(c, "evidencia_externa", "id_evidencia", "EXT")
             c.execute("INSERT INTO evidencia_externa VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                      (ide, id_paciente, fecha_examen.isoformat(), tipo, valor, lugar, archivo,
+                      (ide, id_paciente, fecha_examen.isoformat(), tipo, valor, lugar, archivo.uri if archivo else None,
                        fecha_recepcion.isoformat(), "pendiente", None, None, None))
             return ide
 
@@ -236,11 +324,64 @@ class Registro:
 
     # -- bitácora -----------------------------------------------------------------------------
     def registrar_corrida(self, **kw):
+        origen = kw.get("origen") or ("completo" if kw["alcance"] == "historia completa" else "solicitud")
         with self.conexion() as c:
             c.execute("INSERT INTO corrida_nocturna (inicio, fin, desde, hasta, alcance, version_reglas, "
-                      "n_evaluaciones, n_propuestas, segundos) VALUES (?,?,?,?,?,?,?,?,?)",
+                      "n_evaluaciones, n_propuestas, segundos, origen, estado) VALUES (?,?,?,?,?,?,?,?,?,?,'completa')",
                       (kw["inicio"], kw["fin"], kw["desde"], kw["hasta"], kw["alcance"], kw["version_reglas"],
-                       kw["n_evaluaciones"], kw["n_propuestas"], kw["segundos"]))
+                       kw["n_evaluaciones"], kw["n_propuestas"], kw["segundos"], origen))
 
     def corridas(self) -> pd.DataFrame:
-        return self.consulta("SELECT * FROM corrida_nocturna ORDER BY id_corrida DESC")
+        return self.consulta(f"SELECT {', '.join(COLUMNAS_CORRIDA)} FROM corrida_nocturna ORDER BY id_corrida DESC")
+
+    # -- consolidación (F0006) ----------------------------------------------------------------
+    def fecha_corte(self) -> date | None:
+        """En modo local no hay versiones de datos: la API usa la última fecha con datos."""
+        return None
+
+    def modo_fecha(self) -> str:
+        return "local"
+
+    def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]):
+        """Reemplaza solo las noches indicadas de la serie (todas las especialidades)."""
+        with self.conexion() as c:
+            lista = sorted(fechas)
+            for i in range(0, len(lista), 500):
+                lote = lista[i:i + 500]
+                c.execute(f"DELETE FROM serie_nocturna WHERE fecha IN ({','.join('?' * len(lote))})", lote)
+            serie.to_sql("serie_nocturna", c, if_exists="append", index=False, chunksize=20000)
+
+    def iniciar_corrida(self, origen: str, alcance: str, desde: date, hasta: date, id_carga: int | None = None) -> int:
+        from . import reglas as R
+        with self.conexion() as c:
+            return c.execute("INSERT INTO corrida_nocturna (inicio, desde, hasta, alcance, version_reglas, origen, "
+                             "estado, id_carga) VALUES (?,?,?,?,?,?,'en_curso',?)",
+                             (datetime.now().isoformat(timespec="seconds"), desde.isoformat(), hasta.isoformat(),
+                              alcance, R.VERSION_REGLAS, origen, id_carga)).lastrowid
+
+    def terminar_corrida(self, id_corrida: int, estado: str, n_evaluaciones: int = 0, n_propuestas: int = 0,
+                         detalle: dict | None = None, error: str | None = None):
+        with self.conexion() as c:
+            inicio = c.execute("SELECT inicio FROM corrida_nocturna WHERE id_corrida = ?", (id_corrida,)).fetchone()[0]
+            fin = datetime.now()
+            c.execute("UPDATE corrida_nocturna SET fin = ?, estado = ?, n_evaluaciones = ?, n_propuestas = ?, "
+                      "segundos = ?, detalle = ?, error = ? WHERE id_corrida = ?",
+                      (fin.isoformat(timespec="seconds"), estado, n_evaluaciones, n_propuestas,
+                       round((fin - datetime.fromisoformat(inicio)).total_seconds(), 1),
+                       json.dumps(detalle or {}, ensure_ascii=False, default=str), error, id_corrida))
+
+    def corrida_en_curso(self) -> bool:
+        with self.conexion() as c:
+            return c.execute("SELECT EXISTS (SELECT 1 FROM corrida_nocturna WHERE estado = 'en_curso')").fetchone()[0] == 1
+
+    def guardar_estimaciones(self, fecha: date, estimaciones: pd.DataFrame):
+        with self.conexion() as c:
+            c.execute("DELETE FROM estimacion_espera WHERE fecha_calculo = ?", (fecha.isoformat(),))
+            if len(estimaciones):
+                filas = estimaciones[COLUMNAS_ESTIMACION].assign(publicable=estimaciones["publicable"].astype(int))
+                filas.to_sql("estimacion_espera", c, if_exists="append", index=False)
+
+    def estimaciones(self, id_solicitud: str | None = None) -> pd.DataFrame:
+        filtro, params = ("WHERE id_solicitud = ?", (id_solicitud,)) if id_solicitud else ("", ())
+        return self.consulta(f"SELECT {', '.join(COLUMNAS_ESTIMACION)} FROM estimacion_espera {filtro} "
+                             f"ORDER BY fecha_calculo, id_solicitud", params)

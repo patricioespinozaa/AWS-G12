@@ -4,16 +4,39 @@ import { useApp } from "./contexto";
 import Agenda from "./paginas/Agenda";
 import Bandeja from "./paginas/Bandeja";
 import Canal from "./paginas/Canal";
+import Cargas from "./paginas/Cargas";
 import Ficha from "./paginas/Ficha";
 import Kpis from "./paginas/Kpis";
 import Nocturno from "./paginas/Nocturno";
 import { sumarDias } from "./utils";
+
+const MODO_FECHA = {
+  datos: "fecha de la última carga aplicada",
+  manual: "fecha fijada para un ensayo",
+  local: "última fecha de los CSV locales",
+};
+
+function AvisoRecalculo() {
+  const { consolidacion } = useApp();
+  if (!consolidacion) return null;
+  if (consolidacion.en_curso)
+    return (
+      <div className="aviso info recalculo" role="status">
+        ⏳ Recalculando prioridades con los datos nuevos (desde {consolidacion.inicio?.slice(11, 16) ?? "ahora"}). Puedes
+        seguir revisando; al terminar la vista se actualiza sola.
+      </div>
+    );
+  if (consolidacion.error)
+    return <div className="aviso error recalculo" role="alert">El último recálculo falló: {consolidacion.error}</div>;
+  return null;
+}
 
 function BarraCorte() {
   const { meta, corte, setCorte } = useApp();
   if (!meta) return null;
   const esHoy = corte === meta.fecha_referencia;
   return (
+    <>
     <div className="barra">
       <div className="corte">
         <label htmlFor="corte">Fecha de corte</label>
@@ -27,13 +50,16 @@ function BarraCorte() {
           Hoy ({meta.fecha_referencia})
         </button>
       </div>
-      <span className="nota-corte">
-        Se usa solo lo que el hospital sabía hasta esa noche, como en la consolidación nocturna.
+      <span className="nota-corte" title={MODO_FECHA[meta.modo_fecha]}>
+        Datos al <b>{meta.datos_al}</b>{meta.modo_fecha === "manual" ? " (fecha fijada)" : ""}. Se usa solo lo que el
+        hospital sabía hasta esa noche.
       </span>
       <span className="ia">
         {meta.llm.activo ? `IA generativa: Amazon Bedrock · ${meta.llm.modelo}` : "IA generativa desactivada · explicaciones con plantilla"}
       </span>
     </div>
+    <AvisoRecalculo />
+    </>
   );
 }
 
@@ -50,7 +76,7 @@ export default function App() {
           </div>
         </div>
         <nav className="nav-grupo">
-          <span>Equipo clínico</span>
+          <span>Revisión</span>
           <NavLink to="/bandeja">📋 Bandeja priorizada</NavLink>
           <NavLink to="/ficha">🩺 Ficha del paciente</NavLink>
           <NavLink to="/agenda">🗓️ Agenda y box</NavLink>
@@ -63,12 +89,13 @@ export default function App() {
           <span>Gestión</span>
           <NavLink to="/kpis">📊 KPIs</NavLink>
           <NavLink to="/nocturno">🌙 Consolidación nocturna</NavLink>
+          <NavLink to="/cargas">📥 Cargas de datos</NavLink>
         </nav>
         <div className="principio">
-          La herramienta <b>propone y explica</b>; el equipo clínico <b>decide</b>.
+          La herramienta <b>propone y explica</b>; la Administradora <b>decide</b>.
           <br />
           La posición en la lista no equivale a una fecha garantizada de atención.
-          {meta && <><br /><br />Reglas <b>{meta.version_reglas}</b></>}
+          {meta && <><br /><br />Reglas <b>{meta.version_reglas}</b> · {meta.base_de_datos === "rds" ? "base de datos RDS" : "modo local"}<br />Usuaria: <b>{meta.usuaria}</b></>}
         </div>
       </aside>
       <main className="principal">
@@ -86,6 +113,7 @@ export default function App() {
               <Route path="/canal" element={<Canal />} />
               <Route path="/kpis" element={<Kpis />} />
               <Route path="/nocturno" element={<Nocturno />} />
+              <Route path="/cargas" element={<Cargas />} />
               <Route path="*" element={<Navigate to="/bandeja" replace />} />
             </Routes>
           )}

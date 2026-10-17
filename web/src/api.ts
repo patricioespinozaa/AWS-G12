@@ -13,6 +13,38 @@ export interface Meta {
   agenda: { min: string; max: string };
   tipos_medicion: { tipo: string; nombre: string; unidad: string; rango: [number, number] }[];
   casos_referencia: { id_paciente: string; id_solicitud: string; patron: string }[];
+  /** Única usuaria de la plataforma (F0005); desde F0007, la de la sesión. */
+  usuaria: string;
+  /** rds: datos y registro en la base (habilita las cargas por periodo); local: CSV + SQLite. */
+  base_de_datos: "rds" | "local";
+  /** Fecha de corte de los datos (F0006): la de la última versión aplicada. Es el "hoy" de la app. */
+  datos_al: string;
+  /** datos: la fecha viene de las cargas; manual: fijada para un ensayo; local: última fecha de los CSV. */
+  modo_fecha: "datos" | "manual" | "local";
+}
+
+/** Recálculo en segundo plano (F0006): tras confirmar una carga o pedir el recálculo completo. */
+export interface EstadoConsolidacion {
+  en_curso: boolean;
+  origen: string | null;
+  inicio: string | null;
+  fin: string | null;
+  resultado: Registro | null;
+  error: string | null;
+  fecha_corte: string;
+}
+
+/** Estimación de espera `throughput_8_semanas` (F0006). Uso interno: no se informa al paciente. */
+export interface Estimacion {
+  fecha_calculo: string;
+  prioridad_vigente: Nivel;
+  posicion_vigente: number;
+  total_cola: number;
+  dias_estimados_min: number;
+  dias_estimados_max: number;
+  confianza: "alta" | "media" | "baja";
+  metodo: string;
+  publicable: number;
 }
 
 export interface FilaBandeja {
@@ -98,6 +130,7 @@ export interface FichaPaciente {
   ficha: Record<string, Registro[]>;
   decisiones: Registro[];
   propuestas: Registro[];
+  estimacion: Estimacion | null;
 }
 
 export interface PuntoSerie {

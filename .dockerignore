@@ -1,0 +1,26 @@
+# La imagen del backend solo copia priorizacion/, db/, api/, servicios/ y requirements/base.txt (docker/backend/Dockerfile).
+# Esta lista evita que el contexto de build (y los assets de CDK) arrastre datos del hospital o archivos pesados.
+.git
+.github
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.venv
+.env
+*.env
+
+# Datos: nunca dentro de una imagen
+data/
+*.csv
+*.xlsx
+*.sqlite
+
+# Frontend e infraestructura (tienen su propio despliegue)
+web/
+infra/
+cdk.out/
+node_modules/
+
+notebooks/
+docs/
+tests/

@@ -122,6 +122,15 @@ function Cabecera({ d }: { d: FichaPaciente }) {
           {r.excluido ? <span className="suave">—</span> : ETIQUETA_DISP[d.disponibilidad.estado]}
           {!r.excluido && d.disponibilidad.accion && <div><small>{d.disponibilidad.accion}</small></div>}
         </div>
+        <div className="dato-nivel" title="Rango según la posición vigente y las atenciones de las últimas 8 semanas. Uso interno: no se informa al paciente.">
+          <span className="etiqueta">Espera estimada (uso interno)</span>
+          {r.excluido || !d.estimacion ? <span className="suave">Sin estimación</span> : (
+            <>
+              <b>{d.estimacion.dias_estimados_min}–{d.estimacion.dias_estimados_max} días</b>
+              <div><small>Posición {d.estimacion.posicion_vigente} de {d.estimacion.total_cola} · confianza {d.estimacion.confianza} · al {d.estimacion.fecha_calculo}</small></div>
+            </>
+          )}
+        </div>
       </div>
       {r.excluido && <Aviso tipo="info">Fuera de la lista activa al {d.corte}: {r.motivo_exclusion}.</Aviso>}
       {r.alerta && <Aviso tipo="error">⚠️ <b>Alerta para revisión clínica prioritaria.</b> {r.motivos_alerta.join(" · ")}</Aviso>}
@@ -292,7 +301,6 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
   const [decision, setDecision] = useState<"acepta" | "ajusta" | "rechaza">("acepta");
   const [nivel, setNivel] = useState<string>("alta");
   const [motivo, setMotivo] = useState("");
-  const [usuario, setUsuario] = useState("equipo_clinico");
   const [estado, setEstado] = useState<{ tipo: "exito" | "error"; texto: string } | null>(null);
   const [enviando, setEnviando] = useState(false);
   if (r.excluido) return <Aviso tipo="info">La solicitud no está activa a esta fecha de corte: no hay propuesta que validar.</Aviso>;
@@ -301,7 +309,7 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
     setEstado(null);
     try {
       const res = await postJSON<{ mensaje: string }>(`/api/solicitudes/${id}/decisiones`, {
-        corte, decision, nivel_ajuste: decision === "ajusta" ? nivel : null, motivo, usuario,
+        corte, decision, nivel_ajuste: decision === "ajusta" ? nivel : null, motivo,
       });
       setEstado({ tipo: "exito", texto: res.mensaje });
       setMotivo("");
@@ -315,7 +323,7 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
   return (
     <div className="grid-2">
       <div className="tarjeta pila">
-        <h3>Decisión del equipo clínico</h3>
+        <h3>Decisión de la Administradora</h3>
         <p>
           Propuesta al <b>{corte}</b>: <NivelBadge nivel={r.nivel_propuesto} /> (vigente <NivelBadge nivel={r.prioridad_vigente} />).
           La decisión rige desde esta fecha y queda registrada junto a la propuesta, sus factores y la huella de los datos.
@@ -336,9 +344,7 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
         <label className="campo"><span>Motivo {decision !== "acepta" ? "(obligatorio)" : "(opcional)"}</span>
           <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: revisado con el especialista; se adelanta la consulta" />
         </label>
-        <label className="campo"><span>Profesional que decide</span>
-          <input value={usuario} onChange={(e) => setUsuario(e.target.value)} />
-        </label>
+        <small>Se registra a nombre de la Administradora, junto a la propuesta, sus factores y la huella de los datos.</small>
         <div><button className="boton primario" onClick={enviar} disabled={enviando}>{enviando ? "Registrando y reevaluando…" : "Registrar decisión"}</button></div>
         {estado && <Aviso tipo={estado.tipo}>{estado.texto}</Aviso>}
       </div>
@@ -348,7 +354,7 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
           columnas={[{ clave: "fecha_corte", titulo: "Rige desde" }, { clave: "prioridad_anterior", titulo: "Anterior" },
             { clave: "prioridad_propuesta", titulo: "Propuesta" }, { clave: "decision", titulo: "Decisión" },
             { clave: "prioridad_final", titulo: "Final", render: (f) => <NivelBadge nivel={f.prioridad_final} /> },
-            { clave: "motivo", titulo: "Motivo" }, { clave: "usuario", titulo: "Profesional" }, { clave: "fecha_registro", titulo: "Registrada" }]} />
+            { clave: "motivo", titulo: "Motivo" }, { clave: "usuario", titulo: "Registró" }, { clave: "fecha_registro", titulo: "Registrada" }]} />
         <small>Tras registrar, la serie nocturna del paciente y su cola se recalculan de inmediato: revisa la pestaña de evolución.</small>
       </div>
     </div>

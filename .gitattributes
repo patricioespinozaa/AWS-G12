@@ -1,0 +1,6 @@
+# Archivos que se ejecutan en Linux (contenedor, CI): siempre LF, aunque core.autocrlf=true en Windows.
+# Un entrypoint.sh con CRLF falla en el contenedor con "/bin/sh^M: bad interpreter".
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+.github/**/*.yml text eol=lf

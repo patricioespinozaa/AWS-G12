@@ -21,4 +21,5 @@ __pycache__/
 # App web
 web/node_modules/
 web/dist/
+web/.vite/
 .pytest_cache/

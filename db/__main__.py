@@ -3,15 +3,18 @@
 RDS PostgreSQL (base operativa):
     python -m db probar                          # prueba la conexión
     python -m db esquema [--esquema E]           # crea raw, priorizacion, canal, consulta o todos (por defecto)
-    python -m db cargar [--reemplazar]           # carga los CSV en raw en una transacción
+    python -m db cargar [--reemplazar]           # carga completa; --reemplazar RECONSTRUYE (borra lo que no venga)
+    python -m db cargar --incremental --periodo DESDE:HASTA --datos DIR [--confirmar]
+                                                 # suma la exportación de un periodo (nunca borra), versionada
     python -m db verificar                       # raw: conteos, huérfanos, propiedades. Resto: estructura y protecciones
-    python -m db restaurar                       # todos los esquemas + carga sincronizada + verificación
+    python -m db restaurar                       # todos los esquemas + reconstrucción desde la historia completa
     python -m db permisos [--esquema E]          # roles de la app, el asistente y las Lambdas
     python -m db borrar --esquema E --confirmar  # elimina un esquema (o todos); nunca deja FKs huérfanas
-    python -m db reloj [--demo FECHA | --avanzar [N] | --real]   # fecha de corte (reloj de la demo)
+    python -m db reloj [--fijar FECHA | --datos]  # fecha de corte: la de los datos (por defecto) o fija para ensayos
 
 S3 + Athena (capa de consulta y análisis):
-    python -m db athena publicar                 # raw a S3 (CSV + Parquet), tablas en Athena y verificación
+    python -m db athena publicar [--desde-rds]   # raw a S3 (CSV + Parquet, o Parquet desde RDS), tablas y verificación
+    python -m db athena descargar [--destino DIR]    # baja los CSV publicados y verifica su sha256 (contenedor)
     python -m db athena exportar [--desde --hasta]   # historial nocturno de RDS a S3, una partición por fecha
     python -m db athena verificar                # conteos y huérfanos en Athena contra el manifiesto
     python -m db athena consultar "SELECT …" [-p VALOR …]   # SQL de solo lectura, parametrizado
@@ -23,6 +26,7 @@ S3/Athena: HLF_S3_BUCKET, HLF_S3_PREFIJO, HLF_ATHENA_WORKGROUP, HLF_ATHENA_DB, A
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -69,20 +73,17 @@ def _imprimir_tabla(res) -> None:
 
 
 def _reloj(conn, args) -> None:
+    """Fecha de corte (F0006): la de los datos (por defecto) o fija para ensayos."""
     with conn.transaction():
-        if args.demo:
-            conn.execute("UPDATE priorizacion.reloj SET modo = 'demo', fecha_demo = %s, dias_por_tick = %s, "
-                         "actualizado_en = now(), actualizado_por = 'sistema' WHERE id = 1",
-                         (date.fromisoformat(args.demo), args.dias_por_tick))
-        elif args.avanzar is not None:
-            if conn.execute("SELECT priorizacion.avanzar_reloj(%s)", (args.avanzar or None,)).fetchone()[0] is None:
-                raise carga.ErrorCarga("El reloj está en modo real: fija una fecha con --demo AAAA-MM-DD")
-        elif args.real:
-            conn.execute("UPDATE priorizacion.reloj SET modo = 'real', actualizado_en = now(), "
+        if args.fijar:
+            conn.execute("UPDATE priorizacion.reloj SET modo = 'manual', fecha_manual = %s, actualizado_en = now(), "
+                         "actualizado_por = 'sistema' WHERE id = 1", (date.fromisoformat(args.fijar),))
+        elif args.datos:
+            conn.execute("UPDATE priorizacion.reloj SET modo = 'datos', fecha_manual = NULL, actualizado_en = now(), "
                          "actualizado_por = 'sistema' WHERE id = 1")
-        modo, fecha, tick = conn.execute("SELECT modo, priorizacion.fecha_corte(), dias_por_tick "
-                                         "FROM priorizacion.reloj").fetchone()
-    print(f"Reloj en modo {modo} · fecha de corte {fecha}" + (f" · {tick} día(s) por tick" if modo == "demo" else ""))
+        modo, fecha = conn.execute("SELECT modo, priorizacion.fecha_corte() FROM priorizacion.reloj").fetchone()
+    detalle = "fin del periodo de la última carga aplicada" if modo == "datos" else "fija (ensayo)"
+    print(f"Fecha de corte {fecha} · modo {modo}: {detalle}")
 
 
 def _athena(args) -> int:
@@ -90,8 +91,16 @@ def _athena(args) -> int:
     cfg = athena.Config.desde_entorno()
     if args.accion == "publicar":
         print(f"Publicando raw en s3://{cfg.bucket}/{cfg.prefijo}/ · workgroup {cfg.workgroup}")
+        if args.desde_rds:
+            print(f"Origen: {conexion.describir(args.url)}")
+            with conexion.conectar(args.url) as conn:
+                return 0 if _imprimir_verificacion(athena.publicar(cfg, None, conn_rds=conn)) else 1
         return 0 if _imprimir_verificacion(athena.publicar(cfg, args.datos)) else 1
     s3, cliente = athena.clientes(cfg)
+    if args.accion == "descargar":
+        print(f"Descargando CSV de s3://{cfg.bucket}/{cfg.clave('csv')}/ a {args.destino}")
+        athena.descargar_csv(s3, cfg, args.destino)
+        return 0
     if args.accion == "exportar":
         print(f"Conectando a {conexion.describir(args.url)}")
         with conexion.conectar(args.url) as conn:
@@ -112,6 +121,35 @@ def _athena(args) -> int:
     return 0
 
 
+def _cargar_incremental(conn, args) -> int:
+    desde = hasta = None
+    if args.periodo:
+        try:
+            a, b = args.periodo.split(":")
+            desde, hasta = (date.fromisoformat(a) if a else None), (date.fromisoformat(b) if b else None)
+        except ValueError:
+            print("--periodo debe ser AAAA-MM-DD:AAAA-MM-DD", file=sys.stderr)
+            return 2
+    previa = carga.vista_previa(conn, args.datos, (desde, hasta), cargado_por=os.environ.get("HLF_USUARIA", "sistema"))
+    print(f"Vista previa de la carga {previa['id_carga']} ({previa['estado']}):")
+    for tabla, r in previa["resumen"].items():
+        print(f"  {tabla:<17} {r['filas']:>6} filas: +{r['nuevas']} nuevas, ~{r['modificadas']} modificadas, "
+              f"{r['sin_cambio']} sin cambio")
+    print(f"  Pacientes afectados: {len(previa['pacientes_afectados'])} (nuevos: {len(previa['pacientes_nuevos'])})")
+    for a in previa["advertencias"]:
+        print(f"  ⚠ {a['mensaje']}: {a['cantidad']} (ej. {'; '.join(a['ejemplos'][:3])})")
+    for e in previa["errores"]:
+        print(f"  ✘ {e['archivo']}{f' línea ' + str(e['linea']) if e['linea'] else ''}: {e['mensaje']}")
+    if previa["estado"] != "lista":
+        return 1
+    if not args.confirmar:
+        print("\nNada se escribió. Repite con --confirmar para aplicarla.")
+        return 0
+    res = carga.aplicar_incremental(conn, previa["id_carga"], args.datos)
+    print(f"\nAplicada como versión {res['version']}.")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="python -m db",
                                 description="Base del proyecto: RDS PostgreSQL (operativa) y S3 + Athena (consulta)")
@@ -121,7 +159,13 @@ def main(argv=None) -> int:
     e = sub.add_parser("esquema", help="Crea los esquemas que falten (idempotente)")
     e.add_argument("--esquema", choices=OPCIONES, default="todos")
     c = sub.add_parser("cargar", help="Carga los CSV al esquema raw")
-    c.add_argument("--reemplazar", action="store_true", help="Si raw ya tiene datos, lo sincroniza con los CSV")
+    modo = c.add_mutually_exclusive_group()
+    modo.add_argument("--reemplazar", action="store_true",
+                      help="Reconstruye raw desde la historia COMPLETA: borra lo que no venga en los CSV")
+    modo.add_argument("--incremental", action="store_true",
+                      help="Suma la exportación de un periodo nuevo sin borrar nada (F0005)")
+    c.add_argument("--periodo", metavar="DESDE:HASTA", help="Con --incremental: periodo de la exportación")
+    c.add_argument("--confirmar", action="store_true", help="Con --incremental: aplica después de la vista previa")
     c.add_argument("--datos", type=Path, default=DATA_DIR, help=f"Carpeta de los CSV (por defecto {DATA_DIR})")
     sub.add_parser("verificar", help="Verifica raw y la estructura de los demás esquemas")
     r = sub.add_parser("restaurar", help="Todos los esquemas + carga sincronizada + verificación")
@@ -131,17 +175,18 @@ def main(argv=None) -> int:
     b = sub.add_parser("borrar", help="Elimina un esquema o todos")
     b.add_argument("--esquema", choices=OPCIONES, required=True)
     b.add_argument("--confirmar", action="store_true", help="Necesario para borrar")
-    rl = sub.add_parser("reloj", help="Muestra o cambia la fecha de corte (reloj de la demo)")
+    rl = sub.add_parser("reloj", help="Muestra o cambia la fecha de corte")
     accion = rl.add_mutually_exclusive_group()
-    accion.add_argument("--demo", metavar="AAAA-MM-DD", help="Pasa a modo demo en esa fecha")
-    accion.add_argument("--avanzar", type=int, nargs="?", const=0, metavar="DIAS",
-                        help="Avanza el reloj (por defecto, los días por tick)")
-    accion.add_argument("--real", action="store_true", help="Vuelve a la fecha real")
-    rl.add_argument("--dias-por-tick", type=int, default=1, help="Con --demo: días que avanza cada tick")
+    accion.add_argument("--fijar", metavar="AAAA-MM-DD", help="Fija la fecha de corte (modo manual, para ensayos)")
+    accion.add_argument("--datos", action="store_true", help="Vuelve a la fecha de los datos (modo por defecto)")
     at = sub.add_parser("athena", help="Capa de consulta en S3 + Athena")
     at_sub = at.add_subparsers(dest="accion", required=True)
     ap = at_sub.add_parser("publicar", help="Sube raw a S3, crea las tablas en Athena y verifica")
     ap.add_argument("--datos", type=Path, default=DATA_DIR)
+    ap.add_argument("--desde-rds", action="store_true",
+                    help="Publica lo que hay en RDS (la suma de las cargas por periodo) en vez de una carpeta de CSV")
+    ad = at_sub.add_parser("descargar", help="Baja los CSV publicados y los verifica contra el manifiesto")
+    ad.add_argument("--destino", type=Path, default=DATA_DIR)
     ae = at_sub.add_parser("exportar", help="Exporta el historial nocturno de RDS a S3")
     ae.add_argument("--desde", metavar="AAAA-MM-DD")
     ae.add_argument("--hasta", metavar="AAAA-MM-DD", help="Por defecto, la fecha de corte del reloj")
@@ -162,7 +207,12 @@ def main(argv=None) -> int:
             elif args.comando == "esquema":
                 print("Esquemas aplicados:")
                 _aplicar(conn, args.esquema, esquema.aplicar)
+            elif args.comando == "cargar" and args.incremental:
+                return _cargar_incremental(conn, args)
             elif args.comando in ("cargar", "restaurar"):
+                if args.comando == "restaurar" or args.reemplazar:
+                    print("Atención: reconstruye raw desde la historia COMPLETA y borra lo que no venga en los CSV.\n"
+                          "Para sumar la exportación de un periodo nuevo usa: python -m db cargar --incremental\n")
                 if args.comando == "restaurar":
                     print("Esquemas aplicados:")
                     _aplicar(conn, "todos", esquema.aplicar)
