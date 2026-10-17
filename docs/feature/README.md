@@ -20,6 +20,7 @@ Cada feature tiene un documento `F00NN-nombre.md`. Las de estado **Hecha** descr
 | [F0012](F0012-examenes-externos-ocr.md) | Exámenes externos: subida a S3 y lectura asistida | Implementado | F0005, F0010 | S3, Textract, Bedrock |
 | [F0013](F0013-observabilidad-seguridad-costos.md) | Observabilidad, seguridad y control de costos | Implementado | F0004 (se amplía con cada feature) | CloudWatch, WAF, CloudTrail, Budgets, AWS Backup |
 | [F0014](F0014-configuracion-reglas.md) | Configuración de las reglas, versionada | Implementado | F0005, F0006, F0007 | RDS |
+| [F0015](F0015-rediseno-frontend.md) | Rediseño del frontend | Implementado | F0014 | CloudFront, S3 |
 
 Los pendientes que dejaron las features ya implementadas, y las preguntas abiertas para el HLF, están en [pendientes.md](pendientes.md).
 

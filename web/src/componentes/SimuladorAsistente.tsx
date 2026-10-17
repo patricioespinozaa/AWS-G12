@@ -81,14 +81,10 @@ export function SimuladorAsistente() {
   return (
     <div className="tarjeta pila">
       <div className="fila entre">
-        <h3>Asistente del paciente · simulador de WhatsApp</h3>
+        <h3>Conversación de prueba con el asistente</h3>
         <small className="suave">{ultima ? NIVEL[ultima.nivel] : "conversación nueva"}</small>
       </div>
-      <p className="suave">
-        Usa el mismo núcleo que WhatsApp: verificación de identidad, herramientas sobre las vistas del paciente y
-        auditoría de cada dato informado. Los números son ficticios (contactos de demo); el código de verificación, que en
-        producción llega por SMS, se muestra aquí.
-      </p>
+      <small className="suave">El mismo asistente que responde por WhatsApp, con números ficticios. El código de verificación (SMS) se muestra aquí.</small>
       <div className="fila">
         <label className="campo"><span>Escribe como</span>
           <select value={telefono} onChange={(e) => reiniciar(e.target.value)}>
@@ -120,7 +116,7 @@ export function SimuladorAsistente() {
           placeholder={elegido ? `Mensaje de ${String(elegido.id_paciente)}…` : "Mensaje…"} />
         <button className="boton primario" disabled={enviando || !texto.trim()}>{enviando ? "…" : "Enviar"}</button>
       </form>
-      <div className="fila">
+      <div className="sugerencias">
         {["¿Tengo citas?", "¿En qué lugar de la lista voy?", "¿Qué registros tienen de mí?", "Confirmo mi asistencia",
           "¿Qué debo llevar a la cita?", "Me duele mucho el pecho desde ayer", "Quiero hablar con una persona"].map((q) => (
           <button key={q} className="boton chico" disabled={enviando} onClick={() => enviar(undefined, q)}>{q}</button>

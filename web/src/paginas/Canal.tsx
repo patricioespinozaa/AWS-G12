@@ -1,10 +1,13 @@
+import {
+  AlertOctagon, Bot, Check, ClipboardCheck, FileUp, Headset, Inbox, MessageCircle, PhoneOff, Smartphone, Stethoscope, X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { postJSON, Registro, useApi } from "../api";
 import { Derivaciones, SimuladorAsistente } from "../componentes/SimuladorAsistente";
 import { subirExamen, ValidacionExamen } from "../componentes/ValidacionExamen";
-import { Aviso, Cargando, NivelBadge } from "../componentes/comunes";
+import { Aviso, Cargando, Disponibilidad, Encabezado, NivelBadge, Pasos, Pestanas } from "../componentes/comunes";
 import { useApp } from "../contexto";
-import { ETIQUETA_DISP, num } from "../utils";
+import { num } from "../utils";
 
 const PREGUNTAS_ALARMA = [
   "¿Sus síntomas empeoraron de forma brusca en la última semana?",
@@ -19,8 +22,38 @@ const NOMBRE_TIPO: Record<string, string> = {
   sin_respuesta: "(El paciente no responde)",
 };
 
+type IdPestana = "validar" | "asistente" | "derivaciones" | "simular";
+
 export default function Canal() {
-  const { meta, corte, version, refrescar } = useApp();
+  const { meta, version } = useApp();
+  const pendientes = useApi<{ evidencias: Registro[]; alarmas: Registro[] }>("/api/canal-pendientes", version);
+  const n = (pendientes.data?.evidencias.length ?? 0) + (pendientes.data?.alarmas.length ?? 0);
+  const conAsistente = meta?.base_de_datos === "rds";
+  const [pestana, setPestana] = useState<IdPestana>("validar");
+  const opciones: { id: IdPestana; etiqueta: string; icono: typeof Inbox; contador?: number }[] = [
+    { id: "validar", etiqueta: "Por validar", icono: ClipboardCheck, contador: n },
+    ...(conAsistente ? [
+      { id: "asistente" as const, etiqueta: "Asistente (WhatsApp)", icono: Bot },
+      { id: "derivaciones" as const, etiqueta: "Derivaciones", icono: Headset },
+    ] : []),
+    { id: "simular", etiqueta: "Simular mensajes del paciente", icono: Smartphone },
+  ];
+  return (
+    <>
+      <Encabezado icono={MessageCircle} titulo="Canal del paciente"
+        descripcion="Lo que envían los pacientes (exámenes, síntomas, confirmaciones) entra pendiente: cuenta para la prioridad solo cuando lo validas." />
+      <Pestanas opciones={opciones} activa={pestana} onCambio={setPestana} />
+      {pestana === "validar" && <Validacion />}
+      {pestana === "asistente" && <SimuladorAsistente />}
+      {pestana === "derivaciones" && <Derivaciones />}
+      {pestana === "simular" && <SimularPaciente onEnviado={() => setPestana("validar")} />}
+    </>
+  );
+}
+
+/** Simula lo que un paciente envía por el canal, para probar la validación. */
+function SimularPaciente({ onEnviado }: { onEnviado: () => void }) {
+  const { corte, version, refrescar } = useApp();
   const lista = useApi<Registro[]>("/api/solicitudes");
   const [idPaciente, setIdPaciente] = useState("PAC-HLF-00028");
   const { data, error } = useApi<Registro>(`/api/canal/${idPaciente}?corte=${corte}`, version);
@@ -41,82 +74,74 @@ export default function Canal() {
     ...(data.mensajes as Registro[]).map((m) => ({ fecha: m.fecha, quien: m.tipo === "sin_respuesta" ? "hospital" : "paciente",
       texto: `${NOMBRE_TIPO[m.tipo] ?? m.tipo}${m.detalle ? `: ${m.detalle}` : ""}`, estado: m.estado })),
     ...(data.evidencias as Registro[]).map((e) => ({ fecha: e.fecha_recepcion, quien: "paciente",
-      texto: `📄 Examen ${e.tipo_medicion} = ${e.valor} (${e.fecha_examen}, ${e.lugar || "lugar no indicado"})${e.archivo ? ` · ${e.archivo}` : ""}`, estado: e.estado })),
+      texto: e.tipo_medicion ? `Examen ${e.tipo_medicion} = ${e.valor} (${e.fecha_examen}, ${e.lugar || "lugar no indicado"})` : `Examen enviado (${e.lugar || "lugar no indicado"})`,
+      estado: e.estado })),
   ].sort((a, b) => a.fecha.localeCompare(b.fecha)) : [];
 
   return (
-    <>
-      <div className="encabezado">
-        <h1>💬 Canal del paciente <small className="suave">(maqueta)</small></h1>
-        <p>
-          Segunda iteración: el paciente confirma su asistencia, envía exámenes hechos en otro lugar y responde un
-          cuestionario breve, sin tener que pedir una hora médica solo para eso. Lo que envía entra como <b>evidencia
-          pendiente</b>: un profesional la valida y recién ahí gatilla la reevaluación. Así quien paga exámenes privados no
-          se salta la fila: su evidencia se evalúa con el mismo criterio que la del hospital.
-        </p>
+    <div className="grid-lateral">
+      <div className="pila">
+        <Pasos actual={-1} pasos={[
+          { titulo: "Elige un paciente", detalle: "de la lista de espera" },
+          { titulo: "Envía un mensaje o examen", detalle: "desde el teléfono" },
+          { titulo: "Valídalo en «Por validar»", detalle: "recién ahí se reevalúa" },
+        ]} />
+        <label className="campo"><span>Paciente</span>
+          <select value={idPaciente} onChange={(e) => setIdPaciente(e.target.value)}>
+            {(lista.data ?? []).map((s) => (
+              <option key={s.id_paciente} value={s.id_paciente}>{s.nombre} · {s.id_paciente} · {s.especialidad}{s.caso_referencia ? ` · ★ ${s.caso_referencia}` : ""}</option>
+            ))}
+          </select>
+        </label>
+        {data && (
+          <div className="tarjeta compacta pila-compacta">
+            <span className="suave">Disponibilidad para box al {corte}</span>
+            <Disponibilidad estado={data.disponibilidad.estado} accion={data.disponibilidad.accion} />
+            {data.disponibilidad.accion && <small>{data.disponibilidad.accion}</small>}
+          </div>
+        )}
+        {respuesta && (
+          <Aviso tipo="exito">
+            Enviado. <button className="boton chico" onClick={onEnviado}><ClipboardCheck size={14} /> Ir a validar</button>
+          </Aviso>
+        )}
       </div>
-      {meta?.base_de_datos === "rds" && (
-        <div className="grid-2">
-          <SimuladorAsistente />
-          <Derivaciones />
-        </div>
-      )}
-      <div className="grid-2">
-        <div className="pila">
-          <label className="campo"><span>Paciente (simulación)</span>
-            <select value={idPaciente} onChange={(e) => setIdPaciente(e.target.value)}>
-              {(lista.data ?? []).map((s) => (
-                <option key={s.id_paciente} value={s.id_paciente}>{s.id_paciente} · {s.nombre} · {s.especialidad}{s.caso_referencia ? ` ★ ${s.caso_referencia}` : ""}</option>
-              ))}
-            </select>
-          </label>
-          {error && <Aviso tipo="error">{error}</Aviso>}
-          {!data ? <Cargando /> : (
-            <div className="telefono">
-              <div className="telefono-cabecera">
-                <div className="marca-logo" style={{ width: 30, height: 30 }}>+</div>
-                <div><b>Hospital La Florida</b><small>Canal de lista de espera · WhatsApp (maqueta)</small></div>
+      <div>
+        {error && <Aviso tipo="error">{error}</Aviso>}
+        {!data ? <Cargando /> : (
+          <div className="telefono">
+            <div className="telefono-cabecera">
+              <div className="marca-logo" style={{ width: 30, height: 30 }}><MessageCircle size={16} /></div>
+              <div><b>Hospital La Florida</b><small>Lista de espera de especialidades</small></div>
+            </div>
+            <div className="chat" ref={chat}>
+              <div className="burbuja hospital">
+                Hola, {data.solicitud.nombre}. Usted está en la lista de espera de <b>{data.solicitud.especialidad}</b>.
+                Por aquí puede confirmar su asistencia, enviarnos exámenes recientes o contarnos si sus síntomas cambiaron.
+                {data.requisitos.length > 0 && <> Para su consulta necesitamos un examen reciente de <b>{data.requisitos.join(" o ")}</b>.</>}
+                <small>Mensaje automático</small>
               </div>
-              <div className="chat" ref={chat}>
-                <div className="burbuja hospital">
-                  Hola, {data.solicitud.nombre}. Usted está en la lista de espera de <b>{data.solicitud.especialidad}</b>.
-                  Por aquí puede confirmar su asistencia, enviarnos exámenes recientes o contarnos si sus síntomas cambiaron.
-                  {data.requisitos.length > 0 && <> Para su consulta necesitamos un examen reciente de <b>{data.requisitos.join(" o ")}</b>.</>}
-                  <small>Mensaje automático</small>
+              {historial.map((h, i) => (
+                <div key={i} className={`burbuja ${h.quien}`}>
+                  {h.texto}
+                  <small>{h.fecha} · {h.estado}</small>
                 </div>
-                {historial.map((h, i) => (
-                  <div key={i} className={`burbuja ${h.quien}`}>
-                    {h.texto}
-                    <small>{h.fecha} · {h.estado}</small>
-                  </div>
-                ))}
-                {respuesta && <div className="burbuja hospital">{respuesta}<small>Respuesta automática</small></div>}
-              </div>
-              {modo === "examen" && <FormExamen idPaciente={idPaciente} onListo={(t) => { setRespuesta(t); setModo(""); refrescar(); }} />}
-              {modo === "sintoma" && <FormSintomas onEnviar={(alarma, detalle) => enviarMensaje(alarma ? "sintoma_alarma" : "sintoma_sin_alarma", detalle)} />}
-              <div className="acciones-chat">
-                <button className="boton" onClick={() => enviarMensaje("confirma_asistencia", "Confirmo que asistiré")}>✅ Confirmo asistencia</button>
-                <button className="boton" onClick={() => enviarMensaje("no_puede_asistir", "No puedo en la fecha ofrecida")}>❌ No puedo asistir</button>
-                <button className={`boton${modo === "examen" ? " activo" : ""}`} onClick={() => setModo(modo === "examen" ? "" : "examen")}>📄 Enviar examen</button>
-                <button className={`boton${modo === "sintoma" ? " activo" : ""}`} onClick={() => setModo(modo === "sintoma" ? "" : "sintoma")}>🩺 Cuestionario de síntomas</button>
-                <button className="boton" onClick={() => enviarMensaje("sin_respuesta", "")} title="Simula que el paciente no responde a los mensajes">📵 Simular sin respuesta</button>
-              </div>
+              ))}
+              {respuesta && <div className="burbuja hospital">{respuesta}<small>Respuesta automática</small></div>}
             </div>
-          )}
-          {data && (
-            <div className="tarjeta compacta">
-              Disponibilidad para box al {corte}: <b>{ETIQUETA_DISP[data.disponibilidad.estado]}</b>
-              {data.disponibilidad.accion && <div><small>{data.disponibilidad.accion}</small></div>}
-              <div><small>Los mensajes se registran con la fecha de corte seleccionada ({corte}).</small></div>
+            {modo === "examen" && <FormExamen idPaciente={idPaciente} onListo={(t) => { setRespuesta(t); setModo(""); refrescar(); }} />}
+            {modo === "sintoma" && <FormSintomas onEnviar={(alarma, detalle) => enviarMensaje(alarma ? "sintoma_alarma" : "sintoma_sin_alarma", detalle)} />}
+            <div className="acciones-chat">
+              <button className="boton" onClick={() => enviarMensaje("confirma_asistencia", "Confirmo que asistiré")}><Check size={14} /> Confirmo</button>
+              <button className="boton" onClick={() => enviarMensaje("no_puede_asistir", "No puedo en la fecha ofrecida")}><X size={14} /> No puedo</button>
+              <button className={`boton${modo === "examen" ? " activo" : ""}`} onClick={() => setModo(modo === "examen" ? "" : "examen")}><FileUp size={14} /> Examen</button>
+              <button className={`boton${modo === "sintoma" ? " activo" : ""}`} onClick={() => setModo(modo === "sintoma" ? "" : "sintoma")}><Stethoscope size={14} /> Síntomas</button>
+              <button className="boton" onClick={() => enviarMensaje("sin_respuesta", "")} title="Simula que el paciente no responde a los mensajes"><PhoneOff size={14} /> Sin respuesta</button>
             </div>
-          )}
-          {meta && !meta.llm.activo && (
-            <small>En producción los valores del examen se extraen del PDF o la foto con OCR + IA generativa (Bedrock) y quedan pendientes de validar. En esta maqueta se ingresan a mano.</small>
-          )}
-        </div>
-        <Validacion />
+          </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -231,12 +256,14 @@ function Validacion() {
   return (
     <div className="pila">
       <div className="tarjeta pila">
-        <h2>Bandeja de validación</h2>
-        <p className="suave">La Administradora valida lo que envía el paciente. Al validar, el dato entra a la ficha consolidada y la prioridad del paciente se reevalúa de inmediato.</p>
+        <div className="tarjeta-titulo">
+          <h2><ClipboardCheck size={18} /> Por validar</h2>
+          <small className="suave">Al validar, el dato entra a la ficha y la prioridad se reevalúa de inmediato.</small>
+        </div>
         {error && <Aviso tipo="error">{error}</Aviso>}
         {falla && <Aviso tipo="error">{falla}</Aviso>}
         {!data ? <Cargando /> : data.evidencias.length + data.alarmas.length === 0 ? (
-          <Aviso tipo="info">No hay evidencia pendiente. Envía un examen o un síntoma desde el teléfono de la izquierda.</Aviso>
+          <Aviso tipo="exito">Nada pendiente de validar.</Aviso>
         ) : (
           <>
             {data.evidencias.map((e) => (
@@ -246,7 +273,7 @@ function Validacion() {
             {data.alarmas.map((m) => (
               <div key={m.id_mensaje} className="tarjeta compacta pila">
                 <div className="fila entre">
-                  <b>🚨 {m.id_mensaje} · {m.nombre}</b>
+                  <b className="transicion"><AlertOctagon size={16} className="cambio-sube" /> Síntoma de alarma · {m.nombre}</b>
                   <small>{m.fecha}</small>
                 </div>
                 <div>{m.detalle}</div>
@@ -261,11 +288,11 @@ function Validacion() {
       </div>
       {resultados.length > 0 && (
         <div className="tarjeta pila">
-          <h3>Reevaluaciones gatilladas</h3>
+          <h3>Reevaluaciones de esta sesión</h3>
           {resultados.map((r, i) => (
             <div key={i} className="aviso info">
               <b>{r.id}</b> {r.estado} · {r.nombre}: <NivelBadge nivel={r.antes.nivel_propuesto} /> (puntaje {num(r.antes.puntaje_nivel)})
-              {" → "}<NivelBadge nivel={r.despues.nivel_propuesto} /> (puntaje {num(r.despues.puntaje_nivel)}){r.despues.alerta ? " · ⚠️ alerta" : ""}
+              {" → "}<NivelBadge nivel={r.despues.nivel_propuesto} /> (puntaje {num(r.despues.puntaje_nivel)}){r.despues.alerta ? " · con alerta" : ""}
               <div><small>{r.despues.motivo_principal}</small></div>
             </div>
           ))}

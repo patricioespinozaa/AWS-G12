@@ -1,3 +1,4 @@
+import { FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getJSON, postJSON, Registro } from "../api";
 import { useApp } from "../contexto";
@@ -61,7 +62,7 @@ export function ValidacionExamen({ e, ocupado, onRevisar }: {
   return (
     <div className="tarjeta compacta pila">
       <div className="fila entre">
-        <b>📄 {e.id_evidencia} · {e.nombre}</b>
+        <b className="transicion"><FileText size={16} /> Examen · {e.nombre}</b>
         <small>recibido {e.fecha_recepcion}{lectura ? ` · ${ESTADO_LECTURA[lectura.estado_lectura] ?? lectura.estado_lectura}` : ""}</small>
       </div>
       {bloqueada && <Aviso tipo="error">El escaneo de malware encontró una amenaza: el archivo no se lee ni se muestra. Recházalo.</Aviso>}

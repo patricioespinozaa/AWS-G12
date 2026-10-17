@@ -1,7 +1,8 @@
+import { CheckCircle2, FileSpreadsheet, History, Upload } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { descargar, postJSON, Registro, useApi } from "../api";
-import { Aviso, Cargando, Tabla } from "../componentes/comunes";
+import { Aviso, Cargando, Encabezado, Pasos, Tabla } from "../componentes/comunes";
 import { useApp } from "../contexto";
 
 const ARCHIVOS = ["pacientes.csv", "lista_espera.csv", "eventos_clinicos.csv", "mediciones.csv", "citaciones.csv", "agenda_box.csv"];
@@ -30,17 +31,16 @@ export default function Cargas() {
   const { meta, refrescar, seguirConsolidacion, version } = useApp();
   if (meta && meta.base_de_datos !== "rds") {
     return (
-      <div className="tarjeta pila">
-        <h2>Cargas de datos por periodo</h2>
-        <Aviso tipo="info">
-          Las cargas por periodo guardan versiones en la base de datos (RDS). Esta instancia corre en modo local:
-          los datos se leen de los CSV de <code>HLF_DATA_DIR</code>.
-        </Aviso>
-      </div>
+      <>
+        <Encabezado icono={Upload} titulo="Cargas de datos" />
+        <Aviso tipo="info">Disponible en la app desplegada en AWS: en modo local los datos se leen de los CSV.</Aviso>
+      </>
     );
   }
   return (
     <div className="pila">
+      <Encabezado icono={Upload} titulo="Cargas de datos"
+        descripcion="Suma la exportación de un periodo nuevo. Nada se borra y antes de confirmar ves exactamente qué cambia." />
       <Subida onAplicada={() => { refrescar(); seguirConsolidacion(); }} />
       <Historial version={version} />
     </div>
@@ -92,14 +92,17 @@ function Subida({ onAplicada }: { onAplicada: () => void }) {
 
   const desconocidos = archivos.filter((f) => !ARCHIVOS.includes(f.name));
   const resumen = previa ? Object.entries(previa.resumen).map(([tabla, r]) => ({ tabla, ...r })) : [];
+  const paso = resultado ? 3 : previa ? 2 : archivos.length ? 1 : 0;
   return (
+    <div className="pila">
+    <Pasos actual={paso} pasos={[
+      { titulo: "Elige los archivos", detalle: "CSV exportados del periodo" },
+      { titulo: "Valida", detalle: "vista previa sin escribir nada" },
+      { titulo: "Revisa y confirma", detalle: "o descarta" },
+    ]} />
     <div className="tarjeta pila">
-      <h2>Cargar datos de un periodo nuevo</h2>
-      <p className="suave">
-        Sube los CSV exportados del periodo (todos o algunos de: {ARCHIVOS.join(", ")}). Los datos se <b>suman</b> a lo
-        que ya existe: un paciente con datos previos recibe la información nueva sobre su historia y nada se borra.
-        Antes de confirmar verás exactamente qué cambia.
-      </p>
+      <h2 className="transicion"><FileSpreadsheet size={18} /> Archivos del periodo</h2>
+      <small className="suave">Todos o algunos de: {ARCHIVOS.join(", ")}.</small>
       <div className="fila">
         <label className="campo"><span>Periodo desde</span><input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></label>
         <label className="campo"><span>Periodo hasta</span><input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></label>
@@ -111,20 +114,19 @@ function Subida({ onAplicada }: { onAplicada: () => void }) {
       {desconocidos.length > 0 && <Aviso tipo="atencion">No son archivos del dataset: {desconocidos.map((f) => f.name).join(", ")}</Aviso>}
       <div className="fila">
         <button className="boton primario" disabled={!archivos.length || !!ocupado} onClick={validar}>
-          {ocupado === "validando" ? "Validando…" : "Validar y ver vista previa"}
+          <CheckCircle2 size={15} /> {ocupado === "validando" ? "Validando…" : "Validar y ver vista previa"}
         </button>
       </div>
       {error && <Aviso tipo="error">{error}</Aviso>}
       {resultado && (
         <Aviso tipo="exito">
           Versión <b>{String(resultado.version)}</b> aplicada ({(resultado.pacientes_afectados as string[]).length} pacientes
-          con datos nuevos). Las prioridades se están recalculando en segundo plano: el aviso de arriba indica cuándo
-          termina. <Link to="/bandeja">Ir a la bandeja →</Link>
+          con datos nuevos). Las prioridades se recalculan en segundo plano. <Link to="/bandeja">Ir a la lista priorizada →</Link>
         </Aviso>
       )}
       {previa && (
         <div className="pila">
-          <h3>Vista previa (carga {previa.id_carga}) — nada se ha escrito todavía</h3>
+          <h3>Vista previa · nada se ha escrito todavía</h3>
           {previa.estado === "fallida" ? (
             <>
               <Aviso tipo="error">La carga tiene errores y no se puede confirmar. Corrige los archivos y vuelve a subirlos.</Aviso>
@@ -158,6 +160,7 @@ function Subida({ onAplicada }: { onAplicada: () => void }) {
         </div>
       )}
     </div>
+    </div>
   );
 }
 
@@ -169,7 +172,7 @@ function Historial({ version }: { version: number }) {
     r.resumen ? Object.values(r.resumen as Record<string, Record<string, number>>).reduce((s, x) => s + (x[campo] ?? x[campo === "nuevas" ? "insertadas" : "actualizadas"] ?? 0), 0) : 0;
   return (
     <div className="tarjeta pila">
-      <h2>Versiones de los datos</h2>
+      <h2 className="transicion"><History size={18} /> Versiones de los datos</h2>
       {error && <Aviso tipo="error">{error}</Aviso>}
       {!data ? <Cargando /> : (
         <Tabla filas={data} onFila={(f) => setElegida(Number(f.id_carga))} vacia="Aún no hay cargas."
