@@ -89,4 +89,4 @@ Comandos:
 - Imagen del backend: `docker build -f docker/backend/Dockerfile -t hlf-backend .` (el dataset se monta como volumen o se descarga de S3 al arrancar: nunca va dentro de la imagen)
 - Despliegue en AWS (CDK, F0004): ver `infra/README.md`. Resumen: `cd infra && npx aws-cdk@2 deploy --all -c entorno=demo` con Docker corriendo, después de `python -m db athena publicar`. Pruebas de infraestructura: `cd infra && python -m pytest tests -q`
 - Tests de la base contra PostgreSQL: `HLF_TEST_DATABASE_URL=postgresql://… python -m pytest tests/test_db.py` (usar una base desechable)
-- EDA: notebooks en `notebooks/`; `notebooks/carga.py` carga el dataset desde `data/dataset_hlf_ambulatorio/dataset_hlf_ambulatorio/`.
+- EDA: notebooks en `notebooks/`; `notebooks/carga.py` carga el dataset desde `data/dataset_hlf_ambulatorio/dataset_hlf_ambulatorio/`. Los notebooks se versionan **sin salidas** (una salida puede imprimir filas del dataset): `python -m jupyter nbconvert --clear-output --inplace notebooks/*.ipynb` antes de commitear. Lo verifica `tests/test_privacidad.py`, que también rechaza `.env`, claves y CSV fuera de `data/synthetic/`
