@@ -48,7 +48,8 @@ RETORNOS_LOCALES = ["http://localhost:5173/", "http://localhost:8000/"]
 
 class FrontendStack(Stack):
     def __init__(self, scope: Construct, id: str, *, entorno: Entorno, red: RedStack, backend: BackendStack,
-                 identidad: IdentidadStack, dist: Path, parametro_api: str | None = None, **kwargs) -> None:
+                 identidad: IdentidadStack, dist: Path, parametro_api: str | None = None,
+                 web_acl_arn: str | None = None, **kwargs) -> None:
         super().__init__(scope, id, description="HLF priorización: frontend (S3 + CloudFront)", **kwargs)
 
         bucket = s3.Bucket(
@@ -103,6 +104,7 @@ class FrontendStack(Stack):
         self.distribucion = cf.Distribution(
             self, "Distribucion",
             comment=f"HLF priorización ({entorno.nombre})",
+            web_acl_id=web_acl_arn,            # F0013: WAF (solo donde entorno.waf)
             default_root_object="index.html",
             price_class=cf.PriceClass.PRICE_CLASS_100,
             http_version=cf.HttpVersion.HTTP2_AND_3,

@@ -10,9 +10,10 @@ Las rutas están separadas por dominio en api/rutas/; el estado compartido, en a
 """
 from __future__ import annotations
 
+import json
 import logging
-import sys
 import threading
+import time
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse
@@ -20,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from priorizacion import config
 from priorizacion import reglas as R
+from servicios.comun import logs
 
 from . import estado as E
 from . import seguridad
@@ -27,18 +29,10 @@ from .rutas import (agenda, asistente, bandeja, canal, cargas, consulta, examene
                     solicitudes)
 
 
-def _configurar_logs() -> None:
-    """Los loggers de la app (hlf.*) a stdout en INFO: en AWS llegan a CloudWatch Logs. Uvicorn solo configura los
-    suyos; sin esto, los INFO de la app (p. ej. el registro de cada llamada a Bedrock, F0008) se descartan."""
-    raiz = logging.getLogger("hlf")
-    if not raiz.handlers:
-        h = logging.StreamHandler(sys.stdout)
-        h.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
-        raiz.addHandler(h)
-        raiz.setLevel(logging.INFO)
-
-
-_configurar_logs()
+# Los loggers de la app (hlf.*) a stdout en INFO: en AWS llegan a CloudWatch Logs como JSON (F0013). Uvicorn solo
+# configura los suyos; sin esto, los INFO de la app (p. ej. el registro de cada llamada a Bedrock, F0008) se descartan
+logs.configurar()
+log_peticiones = logging.getLogger("hlf.api.peticiones")
 seguridad.validar_arranque()
 E.iniciar()
 
@@ -52,6 +46,28 @@ async def sin_cache(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         respuesta.headers["Cache-Control"] = "no-store"
     return respuesta
+
+
+@app.middleware("http")
+async def correlacion(request: Request, call_next):
+    """F0013: cada petición lleva un id de correlación (el que manda la Lambda o CloudFront, o uno nuevo) que aparece
+    en todos sus logs y vuelve en la cabecera X-Correlation-Id. Una línea por petición a /api, sin cuerpo ni query."""
+    entrante = request.headers.get("x-correlation-id") or request.headers.get("x-amz-cf-id")
+    with logs.correlacion(entrante) as cid:
+        inicio = time.perf_counter()
+        estado = 500
+        try:
+            respuesta = await call_next(request)
+            estado = respuesta.status_code
+            respuesta.headers["X-Correlation-Id"] = cid
+            return respuesta
+        finally:
+            ruta = request.url.path
+            if ruta.startswith("/api/") and ruta != "/api/salud":
+                plantilla = getattr(request.scope.get("route"), "path", ruta)      # /api/pacientes/{id_paciente}
+                log_peticiones.log(logging.ERROR if estado >= 500 else logging.INFO, json.dumps(
+                    {"evento": "peticion", "metodo": request.method, "ruta": plantilla, "estado": estado,
+                     "ms": round((time.perf_counter() - inicio) * 1000)}))
 
 
 # Sin sesión: solo el health check y la configuración del login (no devuelven datos de pacientes)

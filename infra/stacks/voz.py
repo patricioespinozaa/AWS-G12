@@ -18,11 +18,12 @@ from aws_cdk import aws_connect as connect
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_lex as lex
-from aws_cdk import aws_logs as logs
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 
 from config.entornos import Entorno
+
+from .comun import retencion as retencion_logs
 
 from .asistente import AsistenteStack
 from .datos import DatosStack
@@ -54,7 +55,7 @@ class VozStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12, handler="lambda_voz.handler",
             code=lambda_.Code.from_asset(str(RAIZ / "servicios" / "asistente"), exclude=["*", "!lambda_voz.py"]),
             timeout=Duration.seconds(28), memory_size=256,
-            log_retention=logs.RetentionDays.ONE_MONTH if entorno.dias_logs >= 30 else logs.RetentionDays.ONE_WEEK,
+            log_retention=retencion_logs(entorno.dias_logs),
             environment={"HLF_SERVICIO_SECRET_ID": asistente.secreto_servicio.secret_arn,
                          "HLF_API_PARAMETRO": asistente.parametro_api})
         asistente.secreto_servicio.grant_read(self.funcion)
@@ -104,8 +105,8 @@ class VozStack(Stack):
             self, "Grabaciones", instance_arn=self.instancia.attr_arn, resource_type="CALL_RECORDINGS",
             storage_type="S3", s3_config=connect.CfnInstanceStorageConfig.S3ConfigProperty(
                 bucket_name=datos.bucket.bucket_name, bucket_prefix=f"{entorno.prefijo_s3}/connect/grabaciones"))
-        connect.CfnIntegrationAssociation(self, "LexEnConnect", instance_id=self.instancia.attr_arn,
-                                          integration_type="LEX_BOT", integration_arn=self.alias.attr_arn)
+        asociacion = connect.CfnIntegrationAssociation(self, "LexEnConnect", instance_id=self.instancia.attr_arn,
+                                                       integration_type="LEX_BOT", integration_arn=self.alias.attr_arn)
         horario = connect.CfnHoursOfOperation(
             self, "Horario", instance_arn=self.instancia.attr_arn, name="Policlínico de especialidades",
             time_zone="America/Santiago",
@@ -120,6 +121,7 @@ class VozStack(Stack):
         self.flujo = connect.CfnContactFlow(self, "FlujoEntrante", instance_arn=self.instancia.attr_arn,
                                             name="HLF entrante", type="CONTACT_FLOW", content=contenido,
                                             description="Consentimiento de grabación → asistente → persona (F0011)")
+        self.flujo.add_dependency(asociacion)        # Connect valida que el bot del flujo ya esté asociado
 
         if entorno.voz_reclamar_numero:
             numero = connect.CfnPhoneNumber(self, "Numero", target_arn=self.instancia.attr_arn,

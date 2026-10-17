@@ -19,6 +19,7 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 _secreto = None
 _api_url = None
+_id_correlacion = None     # id de la invocación: la API lo usa en sus logs (F0013)
 
 
 def _secreto_servicio():
@@ -39,12 +40,15 @@ def _url_api():
 def _api(ruta, cuerpo):
     req = urllib.request.Request(_url_api() + ruta, method="POST",
                                  data=json.dumps(cuerpo).encode(),
-                                 headers={"Content-Type": "application/json", "X-HLF-Servicio": _secreto_servicio()})
+                                 headers={"Content-Type": "application/json", "X-HLF-Servicio": _secreto_servicio(),
+                                          "X-Correlation-Id": _id_correlacion or ""})
     with urllib.request.urlopen(req, timeout=50) as r:
         return json.loads(r.read())
 
 
 def handler(event, context):
+    global _id_correlacion
+    _id_correlacion = getattr(context, "aws_request_id", None)
     procesados = 0
     for registro in event.get("Records", []):
         mensaje = registro.get("Sns", {}).get("Message", "{}")
