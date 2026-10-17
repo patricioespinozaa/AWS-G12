@@ -21,7 +21,7 @@ from priorizacion.bandeja import construir_bandeja
 from priorizacion.consolidacion import consolidar, fecha_de_corte
 from priorizacion.datos import Repositorio
 from priorizacion.motor import Decision, Resultado
-from priorizacion.registro import Registro, crear_registro
+from priorizacion.registro import Registro, crear_registro, decisiones_a_objetos
 
 from .serializacion import a_json
 
@@ -194,8 +194,7 @@ def paciente(id_paciente: str):
 
 
 def decisiones(id_solicitud: str) -> list[Decision]:
-    return [Decision(date.fromisoformat(d.fecha_corte), d.prioridad_final)
-            for d in registro.decisiones(id_solicitud).itertuples(index=False)]
+    return decisiones_a_objetos(registro.decisiones(id_solicitud)).get(id_solicitud, [])
 
 
 def cacheado(clave: tuple, calcular):
@@ -218,4 +217,5 @@ def serie() -> pd.DataFrame:
 def resultado_json(r: Resultado) -> dict:
     d = a_json(r)
     d["motivo_principal"] = r.motivo_principal
+    d["puntaje_vigente"] = r.puntaje_vigente
     return d

@@ -29,6 +29,8 @@ class Factor:
 class Decision:
     fecha_corte: date
     prioridad_final: str
+    # Ajuste de la Administradora al puntaje de orden (F0007). None = mantiene el anterior; 0 = vuelve al del motor
+    ajuste_puntaje: float | None = None
 
 
 @dataclass(slots=True)
@@ -51,7 +53,13 @@ class Resultado:
     evidencia_mejora: bool = False
     factores: list[Factor] = field(default_factory=list)
     puntaje_nivel: float = 0.0       # base + señales clínicas: decide el nivel
+    ajuste_puntaje: float = 0.0      # ajuste vigente de la Administradora al puntaje de orden (no cambia el nivel)
     version_reglas: str = R.VERSION_REGLAS
+
+    @property
+    def puntaje_vigente(self) -> float:
+        """Lo que ordena la cola: el puntaje del motor más el ajuste de la Administradora."""
+        return round(self.puntaje + self.ajuste_puntaje, 2)
 
     @property
     def motivo_principal(self) -> str:
@@ -96,6 +104,15 @@ def prioridad_vigente(sol: Solicitud, decisiones: list[Decision], corte: date) -
         if d.fecha_corte <= corte:
             vigente = d.prioridad_final
     return vigente
+
+
+def ajuste_vigente(decisiones: list[Decision], corte: date) -> float:
+    """Último ajuste de puntaje decidido hasta la fecha de corte (una decisión sin ajuste mantiene el anterior)."""
+    ajuste = 0.0
+    for d in sorted(decisiones, key=lambda d: d.fecha_corte):
+        if d.fecha_corte <= corte and d.ajuste_puntaje is not None:
+            ajuste = d.ajuste_puntaje
+    return ajuste
 
 
 def _num(x: float) -> str:
@@ -275,7 +292,7 @@ def evaluar(sol: Solicitud, hist: Historia, corte: date, decisiones: list[Decisi
 
     factores.sort(key=lambda f: (f.categoria in ("base", "contexto"), f.categoria == "ajuste", -abs(f.aporte)))
     return Resultado(**base, excluido=False, motivo_exclusion=None, puntaje=round(puntaje, 2),
-                     puntaje_nivel=round(puntaje_nivel, 2),
+                     puntaje_nivel=round(puntaje_nivel, 2), ajuste_puntaje=ajuste_vigente(decisiones, corte),
                      nivel_calculado=nivel_calc, nivel_propuesto=propuesto, cambio=cambio,
                      alerta=bool(alerta_motivos), motivos_alerta=alerta_motivos, resguardo_aplicado=resguardo,
                      evidencia_mejora=evidencia_mejora, factores=factores)
@@ -288,5 +305,6 @@ def huella_datos(sol: Solicitud, hist: Historia, corte: date, decisiones: list[D
     for tipo in sorted(hist.mediciones):
         partes += [f"{m.ref}={m.valor}" for m in hist.mediciones_hasta(corte)[tipo]]
     partes += [a.ref for a in hist.alarmas_hasta(corte)]
-    partes += [f"{d.fecha_corte}:{d.prioridad_final}" for d in (decisiones or []) if d.fecha_corte <= corte]
+    partes += [f"{d.fecha_corte}:{d.prioridad_final}" + ("" if d.ajuste_puntaje is None else f":{d.ajuste_puntaje:g}")
+               for d in (decisiones or []) if d.fecha_corte <= corte]
     return hashlib.sha256("|".join(partes).encode()).hexdigest()[:16]

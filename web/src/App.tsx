@@ -1,4 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { useSesion } from "./auth/ProveedorSesion";
 import { Cargando } from "./componentes/comunes";
 import { useApp } from "./contexto";
 import Agenda from "./paginas/Agenda";
@@ -65,6 +66,7 @@ function BarraCorte() {
 
 export default function App() {
   const { meta, corte } = useApp();
+  const { salir } = useSesion();
   return (
     <div className="app">
       <aside className="lateral">
@@ -95,8 +97,19 @@ export default function App() {
           La herramienta <b>propone y explica</b>; la Administradora <b>decide</b>.
           <br />
           La posición en la lista no equivale a una fecha garantizada de atención.
-          {meta && <><br /><br />Reglas <b>{meta.version_reglas}</b> · {meta.base_de_datos === "rds" ? "base de datos RDS" : "modo local"}<br />Usuaria: <b>{meta.usuaria}</b></>}
+          {meta && <><br /><br />Reglas <b>{meta.version_reglas}</b> · {meta.base_de_datos === "rds" ? "base de datos RDS" : "modo local"}</>}
         </div>
+        {meta && (
+          <div className="sesion">
+            <span>Administradora</span>
+            <b>{meta.sesion.nombre}</b>
+            {meta.sesion.autenticacion === "cognito" ? (
+              <button className="boton chico" onClick={salir}>Cerrar sesión</button>
+            ) : (
+              <small className="sin-auth">Sin autenticación: solo para desarrollo local</small>
+            )}
+          </div>
+        )}
       </aside>
       <main className="principal">
         <BarraCorte />

@@ -10,9 +10,11 @@ infra/
 ├── stacks/
 │   ├── red.py             VPC 2 AZ y security groups (ALB → backend → RDS)
 │   ├── datos.py           bucket de datos, workgroup de Athena, RDS opcional
+│   ├── identidad.py       Cognito: User Pool de la Administradora, grupo administracion, Hosted UI (F0007)
 │   ├── backend.py         ECS Fargate (imagen docker/backend), ALB interno
 │   ├── nocturno.py        consolidación nocturna: EventBridge Scheduler → tarea ECS (solo con RDS)
-│   └── frontend.py        bucket web, CloudFront (S3 con OAC + /api/* por VPC origin), despliegue de web/dist
+│   └── frontend.py        bucket web, CloudFront (S3 con OAC + /api/* por VPC origin), app client de Cognito
+├── scripts/crear_cuenta.sh  crea la cuenta de una Administradora
 └── tests/test_stacks.py   garantías de seguridad sobre los templates sintetizados
 ```
 
@@ -20,8 +22,9 @@ infra/
 |---|---|---|
 | `Hlf<Entorno>-Red` | VPC, subredes, endpoint S3, security groups | — |
 | `Hlf<Entorno>-Datos` | Bucket de datos, workgroup `hlf-priorizacion-<entorno>`, RDS (solo demo) | Red |
+| `Hlf<Entorno>-Identidad` | User Pool, grupo `administracion`, dominio del login | — |
 | `Hlf<Entorno>-Backend` | Cluster ECS, tarea, servicio, ALB interno, logs; en demo, la tarea nocturna y su programación | Red, Datos |
-| `Hlf<Entorno>-Frontend` | Bucket web, CloudFront, función SPA, regla CloudFront → ALB | Red, Backend |
+| `Hlf<Entorno>-Frontend` | Bucket web, CloudFront, función SPA, regla CloudFront → ALB, app client de Cognito y parámetro SSM `/hlf/<entorno>/cognito` | Red, Backend, Identidad |
 
 **Entornos** (`-c entorno=…`): `dev` (sin RDS; `cdk destroy` borra todo) y `demo` (con RDS; los datos sobreviven a un destroy: bucket `RETAIN`, RDS con snapshot y protección contra borrado).
 
@@ -97,6 +100,16 @@ El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o 
 - `demo` (con RDS): la API lee `raw` de la base y guarda decisiones, propuestas, serie y canal en `priorizacion` y `canal`. Sobrevive a reinicios y redespliegues. Corren **2 tareas** y el despliegue no tiene corte; las tareas se sincronizan por la versión que guarda la base. Al arrancar, la API **aplica las migraciones pendientes** (idempotentes, bajo un candado), así una versión nueva nunca corre sobre un esquema viejo.
 - `dev` (sin RDS): la API guarda en SQLite dentro del contenedor y se pierde al reiniciar. Corre una sola tarea con reemplazo con corte.
 
+## Cuentas (F0007)
+
+Solo entra la Administradora. Una cuenta por persona, nunca compartida: cada carga y decisión queda a su nombre.
+
+| Tarea | Comando |
+|---|---|
+| Crear una cuenta | `ENTORNO=demo bash infra/scripts/crear_cuenta.sh <usuario> "<Nombre Apellido>" [correo]`. Imprime una clave temporal; Cognito pide cambiarla en el primer ingreso |
+| Ver las cuentas que ya entraron | `python -m db usuarios` (como tarea ECS, igual que `restaurar`) |
+| Quitar el acceso | `aws cognito-idp admin-disable-user --user-pool-id <SalidaUserPool> --username <usuario>` (no puede volver a iniciar sesión) y `python -m db usuarios --desactivar <sub>` (corta en menos de 30 s, aunque su sesión siga abierta) |
+
 ## Solución de problemas
 
 | Síntoma | Causa probable | Qué hacer |
@@ -104,6 +117,7 @@ El mismo patrón sirve para `python -m db permisos`, `python -m db verificar` o 
 | El despliegue del backend se revierte solo | El contenedor no arrancó (circuit breaker) | `aws logs tail <SalidaGrupoLogs>`. Si dice "No hay datos", falta `python -m db athena publicar` |
 | La web carga pero `/api/*` responde 502 o 504 | CloudFront no llega al ALB | Revisar que el SG del ALB tenga la regla desde la prefix list `com.amazonaws.global.cloudfront.origin-facing`. Si no basta, permitir el SG `CloudFront-VPCOrigins-Service-SG` que crea CloudFront |
 | `cdk deploy` falla al construir la imagen | Docker no está corriendo | Iniciar Docker Desktop |
+| La app responde 503 "La autenticación no está disponible" | La API no pudo leer el parámetro `/hlf/<entorno>/cognito` (p. ej. justo después del primer despliegue, antes de que termine el stack Frontend) | Esperar a que termine `cdk deploy`; la API vuelve a leerlo cada 5 minutos |
 | Una exportación del buzón quedó `fallida` | Errores de validación (ver Cargas, con archivo y línea) | Corregir los CSV en la misma carpeta del buzón: con archivos distintos se vuelve a procesar la noche siguiente. Las entregas posteriores esperan a que se corrija |
 
 ## Costo aproximado (us-east-1, demo, 24 h al día)

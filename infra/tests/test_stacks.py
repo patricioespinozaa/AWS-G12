@@ -16,7 +16,6 @@ from aws_cdk.assertions import Match, Template
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import construir  # noqa: E402
 
-CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"   # política administrada de CloudFront
 
 
 @pytest.fixture(scope="module", params=["dev", "demo"])
@@ -72,7 +71,12 @@ def test_api_sin_cache_y_web_con_oac(plantillas):
     dist = list(_recursos(t["frontend"], "AWS::CloudFront::Distribution").values())[0]["Properties"]
     config = dist["DistributionConfig"]
     api = [c for c in config["CacheBehaviors"] if c["PathPattern"] == "/api/*"]
-    assert len(api) == 1 and api[0]["CachePolicyId"] == CACHING_DISABLED
+    assert len(api) == 1
+    # Sin caché (TTL 0), pero nombrando Authorization para que CloudFront la reenvíe a la API (F0007)
+    (politica,) = _recursos(t["frontend"], "AWS::CloudFront::CachePolicy").values()
+    p = politica["Properties"]["CachePolicyConfig"]
+    assert p["DefaultTTL"] == 0 and p["MinTTL"] == 0 and p["MaxTTL"] <= 1
+    assert p["ParametersInCacheKeyAndForwardedToOrigin"]["HeadersConfig"]["Headers"] == ["Authorization"]
     assert set(api[0]["AllowedMethods"]) >= {"POST", "PUT", "DELETE"}
     assert config["DefaultCacheBehavior"]["FunctionAssociations"][0]["EventType"] == "viewer-request"
     assert _recursos(t["frontend"], "AWS::CloudFront::OriginAccessControl")
@@ -99,7 +103,7 @@ def test_la_app_solo_escribe_en_sus_prefijos_de_s3(plantillas):
     assert "/hlf/canal/evidencias/*" in politicas and "/hlf/cargas/*" in politicas
     assert "s3:DeleteObject" not in politicas
     t["backend"].has_resource_properties("AWS::ElasticLoadBalancingV2::TargetGroup", {
-        "HealthCheckPath": "/api/meta", "Port": 8000})
+        "HealthCheckPath": "/api/salud", "Port": 8000})
 
 
 def test_variables_del_contenedor_sin_secretos_en_claro(plantillas):
@@ -183,3 +187,23 @@ def test_consolidacion_nocturna_solo_con_rds(plantillas):
     politicas = json.dumps(t["backend"].find_resources("AWS::IAM::Policy"))
     assert "/hlf/parquet/*" in politicas and "/hlf/historial/*" in politicas
     assert "ecs:RunTask" in politicas and "iam:PassRole" in politicas
+
+
+def test_login_de_la_administradora(plantillas):
+    """F0007: User Pool sin registro abierto, un grupo, cliente público con PKCE y la API leyendo su configuración."""
+    entorno, t = plantillas
+    t["identidad"].has_resource_properties("AWS::Cognito::UserPool", {
+        "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": True}})
+    grupos = [g["Properties"]["GroupName"] for g in _recursos(t["identidad"], "AWS::Cognito::UserPoolGroup").values()]
+    assert grupos == ["administracion"]
+    (cliente,) = _recursos(t["frontend"], "AWS::Cognito::UserPoolClient").values()
+    c = cliente["Properties"]
+    assert c["GenerateSecret"] is False and c["AllowedOAuthFlows"] == ["code"]
+    assert "implicit" not in json.dumps(c)
+    t["frontend"].has_resource_properties("AWS::SSM::Parameter", {"Name": f"/hlf/{entorno}/cognito"})
+    tarea = next(x for x in _recursos(t["backend"], "AWS::ECS::TaskDefinition").values()
+                 if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
+    variables = {v["Name"]: v.get("Value") for v in tarea["Properties"]["ContainerDefinitions"][0]["Environment"]}
+    assert variables["HLF_COGNITO_PARAMETRO"] == f"/hlf/{entorno}/cognito"
+    assert "ssm:GetParameter" in json.dumps(t["backend"].find_resources("AWS::IAM::Policy"))
+

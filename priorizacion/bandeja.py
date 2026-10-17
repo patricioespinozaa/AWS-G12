@@ -33,6 +33,7 @@ def construir_bandeja(repo: Repositorio, registro: Registro, corte: date) -> tup
             "prioridad_inicial": sol.prioridad_inicial, "prioridad_vigente": r.prioridad_vigente,
             "nivel_propuesto": r.nivel_propuesto, "cambio": r.cambio, "alerta": int(r.alerta),
             "puntaje": r.puntaje, "puntaje_nivel": r.puntaje_nivel, "motivo_principal": r.motivo_principal,
+            "ajuste_puntaje": r.ajuste_puntaje, "puntaje_vigente": r.puntaje_vigente,
             "dias_espera": (corte - sol.fecha_ingreso).days, "fecha_ingreso": sol.fecha_ingreso.isoformat(),
             "disponibilidad": disp.estado, "accion": disp.accion, "riesgo_no_show": disp.riesgo_no_show,
         })

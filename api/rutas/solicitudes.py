@@ -1,10 +1,10 @@
 """Ficha de una solicitud: resultado, serie, datos clínicos, explicación y decisiones de la Administradora."""
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
-from priorizacion import config, nocturno
+from priorizacion import nocturno
 from priorizacion import reglas as R
 from priorizacion.disponibilidad import evaluar_disponibilidad
 from priorizacion.explicacion import explicacion_llm, explicacion_plantilla
@@ -12,9 +12,11 @@ from priorizacion.ficha import ficha_consolidada, resumen_clinico
 from priorizacion.motor import evaluar, huella_datos
 
 from .. import estado as E
+from ..seguridad import Persona, administradora
 from ..serializacion import a_json
 
 router = APIRouter()
+MAX_AJUSTE = 100.0                     # mismo límite que la base (decision_ajuste_acotado)
 
 
 @router.get("/api/solicitudes/{id_solicitud}")
@@ -102,22 +104,21 @@ def explicacion_ia(id_solicitud: str, corte: str | None = None):
 
 
 class DecisionIn(BaseModel):
-    """La autora es siempre la Administradora (única usuaria; desde F0007, la sesión). No viene en el cuerpo."""
+    """La autora es la Administradora con sesión iniciada (F0007). Nunca viene en el cuerpo."""
     corte: str
     decision: Literal["acepta", "ajusta", "rechaza"]
     nivel_ajuste: Literal["alta", "media", "baja"] | None = None
     motivo: str = ""
+    # Puntaje de orden que fija la Administradora (F0007). Sin él, se mantiene el ajuste que hubiera
+    puntaje: float | None = Field(None, ge=0, le=200)
 
 
 @router.post("/api/solicitudes/{id_solicitud}/decisiones")
-def registrar_decision(id_solicitud: str, d: DecisionIn):
+def registrar_decision(id_solicitud: str, d: DecisionIn, quien: Persona = Depends(administradora)):
     c = E.fecha(d.corte)
     sol = E.solicitud(id_solicitud)
     if d.decision != "acepta" and not d.motivo.strip():
         raise HTTPException(422, "Indica el motivo para ajustar o rechazar la propuesta.")
-    if d.decision == "ajusta" and not d.nivel_ajuste:
-        raise HTTPException(422, "Indica el nivel al que se ajusta.")
-    motivo = d.motivo.strip() or "Acepta la propuesta"
     E.exigir_sin_recalculo()
     with E.escritura:
         hist = E.repo.historias[sol.id_paciente]
@@ -125,14 +126,38 @@ def registrar_decision(id_solicitud: str, d: DecisionIn):
         r = evaluar(sol, hist, c, decs)
         if r.excluido:
             raise HTTPException(409, f"La solicitud no está activa al {c.isoformat()}: {r.motivo_exclusion}")
-        final = {"acepta": r.nivel_propuesto, "ajusta": d.nivel_ajuste, "rechaza": r.prioridad_vigente}[d.decision]
+        ajuste = _ajuste_puntaje(r, d.puntaje)
+        if ajuste is not None and not d.motivo.strip():
+            raise HTTPException(422, "Indica el motivo para cambiar el puntaje.")
+        if d.decision == "ajusta" and not d.nivel_ajuste and ajuste is None:
+            raise HTTPException(422, "Indica el nivel o el puntaje que se ajusta.")
+        nivel_ajuste = d.nivel_ajuste or r.prioridad_vigente       # solo cambia el puntaje: el nivel se mantiene
+        final = {"acepta": r.nivel_propuesto, "ajusta": nivel_ajuste, "rechaza": r.prioridad_vigente}[d.decision]
+        motivo = d.motivo.strip() or "Acepta la propuesta"
         id_prop = E.registro.guardar_propuesta(r, huella_datos(sol, hist, c, decs), explicacion_plantilla(r),
                                                "plantilla", "validacion")
-        E.registro.registrar_decision(id_prop, r, d.decision, final, motivo, config.USUARIA)
+        E.registro.registrar_decision(id_prop, r, d.decision, final, motivo, quien.id_usuario, ajuste)
         nocturno.recalcular_solicitud(E.repo, E.registro, id_solicitud)
-    return {"ok": True, "prioridad_final": final,
-            "mensaje": f"Decisión registrada: {d.decision} → prioridad {final} desde el {c.isoformat()}. "
+    puntaje = "" if ajuste is None else (
+        f" Puntaje de orden {r.puntaje + ajuste:g} (motor {r.puntaje:g}, ajuste {ajuste:+g})." if ajuste
+        else f" Puntaje de orden: vuelve al del motor ({r.puntaje:g}).")
+    return {"ok": True, "prioridad_final": final, "ajuste_puntaje": ajuste,
+            "mensaje": f"Decisión registrada: {d.decision} → prioridad {final} desde el {c.isoformat()}.{puntaje} "
                        "La serie del paciente y su cola se recalcularon."}
+
+
+def _ajuste_puntaje(r, puntaje: float | None) -> float | None:
+    """Ajuste que implica el puntaje fijado por la Administradora (None si no lo cambia). El puntaje del motor
+    queda intacto: se guarda la diferencia, que rige hasta la siguiente decisión que la cambie."""
+    if puntaje is None:
+        return None
+    ajuste = round(puntaje - r.puntaje, 2)
+    if abs(ajuste - r.ajuste_puntaje) < 0.01:
+        return None                                  # mismo puntaje vigente: no hay cambio
+    if abs(ajuste) > MAX_AJUSTE:
+        raise HTTPException(422, f"El ajuste no puede superar ±{MAX_AJUSTE:g} puntos sobre el puntaje del motor "
+                                 f"({r.puntaje:g}).")
+    return ajuste
 
 
 @router.get("/api/propuestas/{id_propuesta}/factores")

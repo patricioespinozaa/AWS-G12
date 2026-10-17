@@ -115,7 +115,10 @@ function Cabecera({ d }: { d: FichaPaciente }) {
           )}
         </div>
         <div className="dato-nivel"><span className="etiqueta">Puntaje de nivel · de orden</span>
-          {r.excluido ? <span className="suave">—</span> : <><b>{num(r.puntaje_nivel)}</b> · {num(r.puntaje)}</>}
+          {r.excluido ? <span className="suave">—</span> : <><b>{num(r.puntaje_nivel)}</b> · {num(r.puntaje_vigente)}</>}
+          {!r.excluido && r.ajuste_puntaje !== 0 && (
+            <div><small>Orden ajustado por la Administradora: motor {num(r.puntaje)} {r.ajuste_puntaje > 0 ? "+" : "−"} {num(Math.abs(r.ajuste_puntaje))}</small></div>
+          )}
         </div>
         <div className="dato-nivel" title={d.disponibilidad.accion ?? ""}>
           <span className="etiqueta">Disponibilidad para box</span>
@@ -301,8 +304,13 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
   const [decision, setDecision] = useState<"acepta" | "ajusta" | "rechaza">("acepta");
   const [nivel, setNivel] = useState<string>("alta");
   const [motivo, setMotivo] = useState("");
+  const [puntaje, setPuntaje] = useState<string>(String(r.puntaje_vigente));
   const [estado, setEstado] = useState<{ tipo: "exito" | "error"; texto: string } | null>(null);
   const [enviando, setEnviando] = useState(false);
+  useEffect(() => setPuntaje(String(r.puntaje_vigente)), [r.puntaje_vigente]);
+  const puntajeNum = Number(puntaje.replace(",", "."));
+  const cambiaPuntaje = puntaje.trim() !== "" && Number.isFinite(puntajeNum) && Math.abs(puntajeNum - r.puntaje_vigente) >= 0.01;
+  const motivoObligatorio = decision !== "acepta" || cambiaPuntaje;
   if (r.excluido) return <Aviso tipo="info">La solicitud no está activa a esta fecha de corte: no hay propuesta que validar.</Aviso>;
   const enviar = async () => {
     setEnviando(true);
@@ -310,6 +318,7 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
     try {
       const res = await postJSON<{ mensaje: string }>(`/api/solicitudes/${id}/decisiones`, {
         corte, decision, nivel_ajuste: decision === "ajusta" ? nivel : null, motivo,
+        puntaje: cambiaPuntaje ? puntajeNum : null,
       });
       setEstado({ tipo: "exito", texto: res.mensaje });
       setMotivo("");
@@ -341,7 +350,17 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
             </select>
           </label>
         )}
-        <label className="campo"><span>Motivo {decision !== "acepta" ? "(obligatorio)" : "(opcional)"}</span>
+        <div className="pila-compacta">
+          <label className="campo"><span>Puntaje de orden (ordena la cola dentro del nivel)</span>
+            <input type="number" step="0.1" min={0} max={200} value={puntaje} onChange={(e) => setPuntaje(e.target.value)} style={{ width: 120 }} />
+          </label>
+          <small>
+            Motor: <b>{num(r.puntaje)}</b>{r.ajuste_puntaje !== 0 && <> · ajuste vigente {r.ajuste_puntaje > 0 ? "+" : "−"}{num(Math.abs(r.ajuste_puntaje))}</>}.
+            {" "}Cambiarlo no altera el nivel ni el cálculo del motor: se guarda la diferencia, que rige hasta la próxima decisión.
+            {r.ajuste_puntaje !== 0 && <> <button className="boton chico" type="button" onClick={() => setPuntaje(String(r.puntaje))}>Volver al del motor</button></>}
+          </small>
+        </div>
+        <label className="campo"><span>Motivo {motivoObligatorio ? "(obligatorio)" : "(opcional)"}</span>
           <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: revisado con el especialista; se adelanta la consulta" />
         </label>
         <small>Se registra a nombre de la Administradora, junto a la propuesta, sus factores y la huella de los datos.</small>
@@ -354,6 +373,9 @@ function TabValidacion({ id, d }: { id: string; d: FichaPaciente }) {
           columnas={[{ clave: "fecha_corte", titulo: "Rige desde" }, { clave: "prioridad_anterior", titulo: "Anterior" },
             { clave: "prioridad_propuesta", titulo: "Propuesta" }, { clave: "decision", titulo: "Decisión" },
             { clave: "prioridad_final", titulo: "Final", render: (f) => <NivelBadge nivel={f.prioridad_final} /> },
+            { clave: "ajuste_puntaje", titulo: "Puntaje", render: (f) => (f.ajuste_puntaje == null ? "—"
+              : f.ajuste_puntaje === 0 ? `motor (${num(f.puntaje_calculado)})`
+              : `${num(f.puntaje_calculado + f.ajuste_puntaje)} (${f.ajuste_puntaje > 0 ? "+" : "−"}${num(Math.abs(f.ajuste_puntaje))})`) },
             { clave: "motivo", titulo: "Motivo" }, { clave: "usuario", titulo: "Registró" }, { clave: "fecha_registro", titulo: "Registrada" }]} />
         <small>Tras registrar, la serie nocturna del paciente y su cola se recalculan de inmediato: revisa la pestaña de evolución.</small>
       </div>
