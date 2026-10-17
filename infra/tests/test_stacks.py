@@ -241,15 +241,17 @@ def test_consulta_kb_sobre_s3_vectors_y_permisos_de_solo_lectura(plantillas):
     """F0009: KB del equipo clínico en S3 Vectors con Titan V2; Athena solo con el workgroup del entorno; la API
     recibe la KB solo donde hay Bedrock y RDS."""
     entorno, t = plantillas
-    (indice,) = _recursos(t["consulta"], "AWS::S3Vectors::Index").values()
-    i = indice["Properties"]
-    assert i["Dimension"] == 1024 and i["DistanceMetric"] == "cosine"
-    assert set(i["MetadataConfiguration"]["NonFilterableMetadataKeys"]) == {"AMAZON_BEDROCK_TEXT", "AMAZON_BEDROCK_METADATA"}
-    (kb,) = _recursos(t["consulta"], "AWS::Bedrock::KnowledgeBase").values()
-    assert kb["Properties"]["StorageConfiguration"]["Type"] == "S3_VECTORS"
-    assert "titan-embed-text-v2" in json.dumps(kb["Properties"]["KnowledgeBaseConfiguration"])
-    (fuente,) = _recursos(t["consulta"], "AWS::Bedrock::DataSource").values()
-    assert fuente["Properties"]["DataSourceConfiguration"]["S3Configuration"]["InclusionPrefixes"] == ["hlf/kb/equipo/"]
+    indices = {x["Properties"]["IndexName"]: x["Properties"] for x in _recursos(t["consulta"], "AWS::S3Vectors::Index").values()}
+    assert set(indices) == {"equipo-clinico", "paciente-faq"}                  # F0009 y F0010
+    for i in indices.values():
+        assert i["Dimension"] == 1024 and i["DistanceMetric"] == "cosine"
+        assert set(i["MetadataConfiguration"]["NonFilterableMetadataKeys"]) == {"AMAZON_BEDROCK_TEXT", "AMAZON_BEDROCK_METADATA"}
+    kbs = list(_recursos(t["consulta"], "AWS::Bedrock::KnowledgeBase").values())
+    assert len(kbs) == 2 and all(kb["Properties"]["StorageConfiguration"]["Type"] == "S3_VECTORS" for kb in kbs)
+    assert all("titan-embed-text-v2" in json.dumps(kb["Properties"]["KnowledgeBaseConfiguration"]) for kb in kbs)
+    prefijos = sorted(f["Properties"]["DataSourceConfiguration"]["S3Configuration"]["InclusionPrefixes"][0]
+                      for f in _recursos(t["consulta"], "AWS::Bedrock::DataSource").values())
+    assert prefijos == ["hlf/kb/equipo/", "hlf/kb/paciente/"]
     politicas = json.dumps(t["consulta"].find_resources("AWS::IAM::ManagedPolicy"))
     assert "athena:StartQueryExecution" in politicas and f"workgroup/hlf-priorizacion-{entorno}" in politicas
     assert '"athena:*"' not in politicas and '"glue:*"' not in politicas and "s3:DeleteObject" not in politicas
@@ -257,3 +259,26 @@ def test_consulta_kb_sobre_s3_vectors_y_permisos_de_solo_lectura(plantillas):
                  if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
     variables = {v["Name"] for v in tarea["Properties"]["ContainerDefinitions"][0]["Environment"]}
     assert ({"HLF_KB_ID", "HLF_KB_DATA_SOURCE_ID"} <= variables) == (entorno == "demo")
+
+
+def test_asistente_cifrado_secretos_y_lambda_sin_vpc(plantillas):
+    """F0010: clave KMS con rotación, secretos generados por AWS, tema SNS solo para End User Messaging Social y una
+    Lambda sin VPC que no recibe secretos en claro. La API recibe la clave y los secretos solo donde hay asistente."""
+    entorno, t = plantillas
+    t["asistente"].has_resource_properties("AWS::KMS::Key", {"EnableKeyRotation": True})
+    secretos = _recursos(t["asistente"], "AWS::SecretsManager::Secret").values()
+    assert len(secretos) == 2 and all("GenerateSecretString" in s["Properties"] for s in secretos)
+    politica = json.dumps(_recursos(t["asistente"], "AWS::SNS::TopicPolicy"))
+    assert "social-messaging.amazonaws.com" in politica
+    (funcion,) = [f for f in _recursos(t["asistente"], "AWS::Lambda::Function").values()
+                  if f["Properties"].get("Handler") == "lambda_whatsapp.handler"]
+    assert "VpcConfig" not in funcion["Properties"]
+    variables = funcion["Properties"]["Environment"]["Variables"]
+    assert set(variables) == {"HLF_SERVICIO_SECRET_ID", "HLF_API_PARAMETRO", "HLF_WHATSAPP_ORIGEN"}
+    tarea = next(x for x in _recursos(t["backend"], "AWS::ECS::TaskDefinition").values()
+                 if not x["Properties"]["ContainerDefinitions"][0].get("Command"))
+    nombres = {v["Name"] for v in tarea["Properties"]["ContainerDefinitions"][0]["Environment"]}
+    esperadas = {"HLF_KMS_KEY_ID", "HLF_HMAC_SECRET_ID", "HLF_SERVICIO_SECRET_ID", "HLF_KB_PACIENTE_ID"}
+    assert (esperadas <= nombres) == (entorno == "demo")
+    t["frontend"].has_resource_properties("AWS::SSM::Parameter", {"Name": f"/hlf/{entorno}/api_url"})
+
