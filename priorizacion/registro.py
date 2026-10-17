@@ -80,6 +80,11 @@ CREATE TABLE IF NOT EXISTS corrida_nocturna (
     origen TEXT, estado TEXT, id_carga INTEGER, detalle TEXT, error TEXT
 );
 
+CREATE TABLE IF NOT EXISTS explicacion_ia (
+    huella_datos TEXT, modelo TEXT, version_prompt TEXT, id_solicitud TEXT, texto TEXT, creado_en TEXT,
+    PRIMARY KEY (huella_datos, modelo, version_prompt)
+);
+
 CREATE TABLE IF NOT EXISTS usuario (
     id_usuario TEXT PRIMARY KEY, nombre TEXT NOT NULL, rol TEXT NOT NULL, activo INTEGER NOT NULL DEFAULT 1,
     creado_en TEXT
@@ -149,6 +154,9 @@ class Registro(Protocol):
     def fecha_corte(self) -> date | None: ...
     def modo_fecha(self) -> str: ...
     def sincronizar_usuario(self, id_usuario: str, nombre: str) -> bool: ...
+    def explicacion_guardada(self, huella: str, modelo: str, version_prompt: str) -> str | None: ...
+    def guardar_explicacion(self, huella: str, modelo: str, version_prompt: str, id_solicitud: str,
+                            texto: str) -> None: ...
     def reemplazar_noches(self, serie: pd.DataFrame, fechas: set[str]): ...
     def iniciar_corrida(self, origen: str, alcance: str, desde: date, hasta: date, id_carga: int | None = None) -> int: ...
     def terminar_corrida(self, id_corrida: int, estado: str, n_evaluaciones: int = 0, n_propuestas: int = 0,
@@ -363,6 +371,19 @@ class RegistroSQLite:
 
     def modo_fecha(self) -> str:
         return "local"
+
+    # -- explicaciones con IA (F0008) -----------------------------------------------------------------
+    def explicacion_guardada(self, huella: str, modelo: str, version_prompt: str) -> str | None:
+        with self.conexion() as c:
+            fila = c.execute("SELECT texto FROM explicacion_ia WHERE huella_datos = ? AND modelo = ? "
+                             "AND version_prompt = ?", (huella, modelo, version_prompt)).fetchone()
+        return fila[0] if fila else None
+
+    def guardar_explicacion(self, huella: str, modelo: str, version_prompt: str, id_solicitud: str,
+                            texto: str) -> None:
+        with self.conexion() as c:
+            c.execute("INSERT OR IGNORE INTO explicacion_ia VALUES (?, ?, ?, ?, ?, ?)",
+                      (huella, modelo, version_prompt, id_solicitud, texto, datetime.now().isoformat(timespec="seconds")))
 
     # -- personas (F0007) ---------------------------------------------------------------------------
     def sincronizar_usuario(self, id_usuario: str, nombre: str) -> bool:
