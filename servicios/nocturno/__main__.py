@@ -15,6 +15,7 @@ import logging
 import sys
 
 from priorizacion import config
+from servicios.comun import logs
 
 from . import buzon as B
 from .proceso import correr
@@ -26,7 +27,7 @@ def main(argv=None) -> int:
     p.add_argument("--sin-confirmar", action="store_true", help="Solo vista previa: no suma nada a raw")
     p.add_argument("--publicar-athena", action="store_true", help="Publica en Athena al terminar (o HLF_ATHENA_PUBLICAR=1)")
     args = p.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logs.configurar()
     if not config.usa_rds():
         print("La consolidación nocturna requiere la base (HLF_DATABASE_URL o HLF_DB_SECRET_ID).", file=sys.stderr)
         return 2
@@ -35,13 +36,18 @@ def main(argv=None) -> int:
     if args.publicar_athena or config.ATHENA_PUBLICAR:
         from db import athena
         publicar = athena.publicador_consolidacion()
-    try:
-        resultado = correr(buzon, autoconfirmar=False if args.sin_confirmar else None, publicar=publicar)
-    except Exception:  # noqa: BLE001 — la corrida ya quedó `fallida` en la bitácora con el error
-        logging.getLogger("hlf.nocturno").exception("La consolidación nocturna falló")
-        return 1
+    registro = logging.getLogger("hlf.nocturno")
+    with logs.correlacion():
+        try:
+            resultado = correr(buzon, autoconfirmar=False if args.sin_confirmar else None, publicar=publicar)
+        except Exception:  # noqa: BLE001 — la corrida ya quedó `fallida` en la bitácora con el error
+            registro.exception(json.dumps({"evento": "nocturno", "resultado": "error"}))
+            return 1
+        # Una línea por corrida: la leen el filtro de métricas y la alarma de F0013 (infra/stacks/observabilidad.py)
+        con_errores = bool(resultado.get("con_errores"))
+        registro.info(json.dumps({"evento": "nocturno", "resultado": "con_errores" if con_errores else "ok"}))
     print(json.dumps(resultado, ensure_ascii=False, default=str, indent=2))
-    return 1 if resultado.get("con_errores") else 0
+    return 1 if con_errores else 0
 
 
 if __name__ == "__main__":

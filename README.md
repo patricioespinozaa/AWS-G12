@@ -4,6 +4,30 @@ Prototipo para el desafío "Evaluación dinámica del riesgo y priorización asi
 
 > La herramienta propone y explica; el equipo clínico decide.
 
+## Acceso a la demo
+
+| | |
+|---|---|
+| **URL** | https://<distribucion>.cloudfront.net |
+| **Usuario** | `admin` |
+| **Contraseña** | `<CONTRASEÑA>` |
+
+Cuenta compartida de la Administradora, solo para la demo del hackatón con **datos sintéticos**. Cognito exige al menos 12 caracteres con mayúscula, minúscula y número, por eso no puede ser `admin`/`admin`. Todo lo que se haga con esta cuenta queda registrado a nombre de `admin`.
+
+Crear o restablecer la cuenta (también sirve si alguien cambió la contraseña):
+
+```bash
+pool=$(aws cloudformation describe-stacks --stack-name HlfDemo-Identidad \
+    --query "Stacks[0].Outputs[?OutputKey=='SalidaUserPool'].OutputValue" --output text)
+aws cognito-idp admin-create-user --user-pool-id "$pool" --username admin --message-action SUPPRESS \
+    --user-attributes Name=name,Value="Administradora demo" 2>/dev/null || true
+aws cognito-idp admin-set-user-password --user-pool-id "$pool" --username admin \
+    --password <CONTRASEÑA> --permanent
+aws cognito-idp admin-add-user-to-group --user-pool-id "$pool" --username admin --group-name administracion
+```
+
+**Después del hackatón o antes de usar datos reales**, desactívala: `aws cognito-idp admin-disable-user --user-pool-id "$pool" --username admin`. Con datos reales cada persona tiene su propia cuenta (`infra/scripts/crear_cuenta.sh`), con MFA.
+
 ## Inicio rápido
 
 ```bash
