@@ -36,6 +36,10 @@ KB_PACIENTE_DATA_SOURCE_ID = os.environ.get("HLF_KB_PACIENTE_DATA_SOURCE_ID", ""
 ASISTENTE_MODELO_ID = os.environ.get("HLF_ASISTENTE_MODELO_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 # Estimación de espera informable al paciente (pregunta H5 al HLF). Solo datos sintéticos de la demo: =1
 ESTIMACION_PUBLICABLE = os.environ.get("HLF_ESTIMACION_PUBLICABLE", "0") == "1"
+# Exámenes externos (F0012): clave KMS de los archivos y si se espera el escaneo de GuardDuty antes de leerlos
+EXAMENES_KMS_KEY_ID = os.environ.get("HLF_EXAMENES_KMS_KEY_ID", "")
+EXAMENES_ESCANEO = os.environ.get("HLF_EXAMENES_ESCANEO", "0") == "1"
+WHATSAPP_ORIGEN = os.environ.get("HLF_WHATSAPP_ORIGEN", "")
 
 # Base de datos (F0005). Con HLF_DATABASE_URL o HLF_DB_SECRET_ID (+ HLF_DB_HOST) la app lee raw de RDS y guarda
 # en los esquemas priorizacion y canal. Sin ellas, modo local: CSV + SQLite (respaldo de la demo).

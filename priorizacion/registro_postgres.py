@@ -258,10 +258,15 @@ class RegistroPostgres:
                  archivo.tipo_mime if archivo else None, fecha_recepcion)).fetchone()[0]
         return str(ide)
 
-    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str):
+    def revisar_evidencia(self, id_evidencia: str, estado: str, revisado_por: str, nota: str,
+                          valores: dict | None = None):
+        v = valores or {}
         with self.conexion() as c:
             c.execute("UPDATE canal.evidencia_externa SET estado = %s, revisado_por = %s, fecha_revision = now(), "
-                      "nota = %s WHERE id_evidencia = %s", (estado, revisado_por, nota, int(id_evidencia)))
+                      "nota = %s, tipo_medicion = coalesce(%s, tipo_medicion), valor = coalesce(%s, valor), "
+                      "fecha_examen = coalesce(%s, fecha_examen), lugar = coalesce(%s, lugar) WHERE id_evidencia = %s",
+                      (estado, revisado_por, nota, v.get("tipo_medicion"), v.get("valor"), v.get("fecha_examen"),
+                       v.get("lugar"), int(id_evidencia)))
 
     def evidencias(self) -> pd.DataFrame:
         return self.consulta(EVIDENCIAS)

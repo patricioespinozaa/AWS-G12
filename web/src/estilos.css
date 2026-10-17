@@ -206,3 +206,10 @@ details summary { cursor: pointer; font-weight: 600; }
 
 /* Simulador del asistente (F0010) */
 .tarjeta > .chat { min-height: 220px; max-height: 380px; background: #efeae2; border-radius: var(--radio); }
+
+/* Lectura asistida de exámenes (F0012) */
+table.propuesta { border-collapse: collapse; font-size: 0.82rem; width: 100%; }
+table.propuesta th { text-align: left; color: var(--texto-suave); font-weight: 600; padding: 3px 8px 3px 0; width: 70px; }
+table.propuesta td { padding: 3px 8px 3px 0; vertical-align: top; }
+table.propuesta q { background: var(--superficie-2); padding: 1px 4px; border-radius: 4px; }
+

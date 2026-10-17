@@ -35,6 +35,8 @@ class Entorno:
     whatsapp_origen: str = ""          # phone-number-id-… de End User Messaging Social
     sms_origen: str = ""               # identidad de origen de End User Messaging SMS (códigos de verificación)
     estimacion_publicable: bool = False   # H5 de pendientes.md: solo True con datos sintéticos
+    # Exámenes externos (F0012): escaneo de malware con GuardDuty antes de leer cada archivo
+    examenes_guardduty: bool = False
     # Voz (F0011): instancia de Connect y bot de Lex. Reclamar el número tiene costo diario: se activa a propósito
     voz: bool = False
     voz_reclamar_numero: bool = False
@@ -62,7 +64,7 @@ ENTORNOS = {
     # Demo del hackatón: los datos y la base sobreviven a un destroy accidental.
     "demo": Entorno("demo", crear_rds=True, retener_datos=True, dias_logs=30, llm_proveedor="bedrock",
                     bedrock_model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0", estimacion_publicable=True,
-                    voz=True),
+                    voz=True, examenes_guardduty=True),
 }
 
 
