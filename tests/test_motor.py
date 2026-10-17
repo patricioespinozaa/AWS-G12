@@ -8,6 +8,8 @@ from priorizacion import reglas as R
 from priorizacion.explicacion import validar_texto_llm
 from priorizacion.motor import Decision, evaluar, huella_datos
 
+pytestmark = pytest.mark.datos   # casos de referencia del dataset
+
 
 def ev(repo, id_paciente, fecha, decisiones=None):
     sol = repo.solicitud_de_paciente(id_paciente)

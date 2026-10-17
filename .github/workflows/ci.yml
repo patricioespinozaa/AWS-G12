@@ -1,0 +1,96 @@
+# Integración continua: cada PR y cada push a las ramas principales.
+# Falla si fallan los tests, el build del frontend, la imagen del backend o la síntesis de la infraestructura.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, aws-db, aws-deploy]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: hlf_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      HLF_TEST_DATABASE_URL: postgresql://postgres:ci@localhost:5432/hlf_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      - run: pip install -r requirements/dev.txt
+      - name: Compilar
+        run: python -m compileall -q api priorizacion db
+      # El dataset del HLF no se versiona (CLAUDE.md): sin él, las pruebas que lo necesitan se saltan solas
+      - name: Tests
+        run: python -m pytest -q -rs
+
+  frontend:
+    name: Frontend (tipos y build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  imagen:
+    name: Imagen del backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f docker/backend/Dockerfile -t hlf-backend:ci .
+      # Solo /app: numpy y scikit-learn traen .csv de prueba dentro de site-packages
+      - name: La imagen no contiene datos del proyecto
+        run: |
+          if docker run --rm --entrypoint sh hlf-backend:ci -c 'find /app \( -name "*.csv" -o -name "*.sqlite" \)' | grep .; then
+            echo "La imagen contiene archivos de datos" >&2; exit 1
+          fi
+
+  infra:
+    name: Infraestructura (cdk synth y pruebas)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: infra/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests -q
+      - name: cdk synth (dev y demo)
+        run: |
+          npx --yes aws-cdk@2 synth -c entorno=dev --quiet
+          npx --yes aws-cdk@2 synth -c entorno=demo --quiet

@@ -46,7 +46,12 @@ def verificar(conn: psycopg.Connection) -> list[Chequeo]:
     existe = conn.execute("SELECT to_regclass('raw.carga_lote') IS NOT NULL").fetchone()[0]
     if not existe:
         return [Chequeo("Esquema raw", False, "no existe: ejecuta python -m db restaurar")]
-    ultima = conn.execute("SELECT id_carga, fin, filas FROM raw.carga_lote ORDER BY id_carga DESC LIMIT 1").fetchone()
+    tiene_versiones = conn.execute("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'raw' "
+                                   "AND table_name = 'carga_lote' AND column_name = 'version')").fetchone()[0]
+    # La última versión APLICADA guarda los totales de raw tras aplicarse (las incrementales suman, F0005)
+    ultima = conn.execute("SELECT id_carga, fin, filas FROM raw.carga_lote "
+                          + ("WHERE estado = 'aplicada' ORDER BY version DESC" if tiene_versiones else "ORDER BY id_carga DESC")
+                          + " LIMIT 1").fetchone()
     if not ultima:
         return [Chequeo("Carga registrada", False, "el esquema existe pero no hay cargas en raw.carga_lote")]
     id_carga, fin, esperadas = ultima
@@ -69,7 +74,7 @@ def verificar(conn: psycopg.Connection) -> list[Chequeo]:
 # Estructura esperada de los esquemas de la app (docs/feature/F0002-modelo-datos-canales.md)
 ESTRUCTURA = {
     "priorizacion": {
-        "tablas": ("usuario", "reloj", "corrida_nocturna", "serie_nocturna", "propuesta_prioridad", "factor_propuesta",
+        "tablas": ("usuario", "reloj", "estado_app", "corrida_nocturna", "serie_nocturna", "propuesta_prioridad", "factor_propuesta",
                    "decision_clinica", "cita_agendada", "estimacion_espera"),
         "vistas": ("v_prioridad_vigente",),
         "solo_insercion": ("decision_clinica",),
@@ -97,6 +102,11 @@ CATALOGOS = {
         ("SELECT count(*) FROM priorizacion.usuario WHERE id_usuario IN ('sistema', 'asistente_ia')", 2),
     "Intenciones del asistente": ("SELECT count(*) FROM canal.intencion", 10),
     "Reloj (fila única)": ("SELECT count(*) FROM priorizacion.reloj", 1),
+    "Usuaria administradora (F0005)": ("SELECT count(*) FROM priorizacion.usuario WHERE id_usuario = 'administradora' "
+                                       "AND rol = 'administracion' AND activo", 1),
+    "Contador de versión de la app": ("SELECT count(*) FROM priorizacion.estado_app", 1),
+    "Historial de cambios de raw (F0005)": ("SELECT count(*) FROM information_schema.tables "
+                                            "WHERE table_schema = 'raw' AND table_name = 'cambio_fila'", 1),
 }
 INFORMATIVOS_APP = {
     "Propuestas": "SELECT count(*) FROM priorizacion.propuesta_prioridad",

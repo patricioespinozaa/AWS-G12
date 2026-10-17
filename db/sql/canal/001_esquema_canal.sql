@@ -285,7 +285,7 @@ COMMENT ON FUNCTION canal.paciente_verificado(text) IS
     'id_paciente de la conversación de la sesión si está en curso y verificada al nivel pedido; si no, NULL';
 
 
--- Todas respetan priorizacion.fecha_corte(): con el reloj en modo demo no se informa nada posterior a esa fecha.
+-- Todas respetan priorizacion.fecha_corte(): no se informa nada posterior a la fecha de los datos (o la fijada).
 
 CREATE OR REPLACE VIEW canal.v_ia_estado_solicitud WITH (security_barrier = true) AS
 SELECT vp.id_solicitud,

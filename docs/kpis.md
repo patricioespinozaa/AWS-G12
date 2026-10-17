@@ -26,7 +26,7 @@ para cada evento relevante e:
     t_reevaluacion(e) = fecha_calculo de la primera propuesta_prioridad posterior a e − fecha(e)
 KPI = % de eventos con t_reevaluacion < 72 h   (reportar también la mediana)
 ```
-En el prototipo, la reevaluación debería dispararse al ingresar el evento, así que el tiempo depende sobre todo de la frecuencia con que se cargan los datos.
+En el prototipo, la reevaluación se dispara cuando el evento entra a la base (F0006): al confirmar una carga, o en la consolidación nocturna de las 02:00 si la exportación llegó al buzón. El tiempo depende entonces de cada cuánto exporta el HLF: con el buzón conectado y exportaciones diarias queda bajo 24 h; con carga manual, se recomienda cargar al menos cada 3 días.
 
 En el dataset, un "evento relevante" es una fila de `eventos_clinicos` con severidad moderada o grave. Como no hay hora, medir en días: la reevaluación cuenta como oportuna si la propuesta con fecha de corte igual a la del evento (o hasta 3 días después) ya lo incorpora.
 
