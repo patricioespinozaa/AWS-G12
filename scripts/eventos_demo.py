@@ -4,6 +4,7 @@ Escribe dos exportaciones incrementales, cada una en su carpeta con `eventos_cli
 
     prueba/  2026-10-14 a 2026-10-20 · 3 pacientes de Cardiología
     demo/    2026-10-21 a 2026-10-27 · 3 pacientes de Broncopulmonar y 1 de Salud Mental
+    demo2/   2026-10-28 a 2026-11-03 · los mismos 4 pacientes de demo, con la evolución invertida
 
 Cada grupo muestra los tres patrones: un evento grave (sube a alta con alerta), un deterioro progresivo (sube por
 la suma de señales) y una mejora (baja un nivel porque hay evidencia). Los periodos no se cruzan: la demo funciona
@@ -54,6 +55,15 @@ EXPORTACIONES = [
         ("PAC-HLF-00100", "Broncopulmonar", "Mejora",
          [("2026-10-22", "buena respuesta"), ("2026-10-24", "reducción dosis"), ("2026-10-26", "estabilización")]),
         ("PAC-HLF-00221", "Salud Mental", "Evento grave", [("2026-10-25", "triage ESI 2")]),
+    ]),
+    ("demo2", "2026-10-28", "2026-11-03", [
+        ("PAC-HLF-00058", "Broncopulmonar", "Mejora tras UCI",
+         [("2026-10-28", "estabilización"), ("2026-10-31", "reducción dosis"), ("2026-11-02", "buena respuesta")]),
+        ("PAC-HLF-00290", "Broncopulmonar", "Evento grave", [("2026-10-29", "ingreso hospitalario")]),
+        ("PAC-HLF-00100", "Broncopulmonar", "Recaída",
+         [("2026-10-29", "resultado alterado"), ("2026-10-31", "aumento dosis"), ("2026-11-02", "descompensación")]),
+        ("PAC-HLF-00221", "Salud Mental", "Mejora tras urgencia",
+         [("2026-10-29", "buena respuesta"), ("2026-11-01", "estabilización")]),
     ]),
 ]
 COLUMNAS = ["id_paciente", "id_evento", "fecha_evento", "tipo_evento", "subtipo", "severidad", "detalle"]
