@@ -284,6 +284,9 @@ $$;
 COMMENT ON FUNCTION canal.paciente_verificado(text) IS
     'id_paciente de la conversación de la sesión si está en curso y verificada al nivel pedido; si no, NULL';
 
+
+-- Todas respetan priorizacion.fecha_corte(): con el reloj en modo demo no se informa nada posterior a esa fecha.
+
 CREATE OR REPLACE VIEW canal.v_ia_estado_solicitud WITH (security_barrier = true) AS
 SELECT vp.id_solicitud,
        vp.id_paciente,
@@ -292,25 +295,30 @@ SELECT vp.id_solicitud,
        vp.estado,
        vp.prioridad_vigente,                         -- la decidida por personas, nunca la propuesta del motor
        vp.fecha_ingreso_lista,
-       current_date - vp.fecha_ingreso_lista AS dias_en_espera,
+       priorizacion.fecha_corte() - vp.fecha_ingreso_lista AS dias_en_espera,
        ee.posicion_vigente,
        ee.total_cola,
        ee.dias_estimados_min,
        ee.dias_estimados_max,
        ee.confianza       AS confianza_estimacion,
-       ee.fecha_calculo   AS fecha_estimacion
+       ee.fecha_calculo   AS fecha_estimacion,
+       priorizacion.fecha_corte() AS fecha_corte
 FROM priorizacion.v_prioridad_vigente vp
 JOIN raw.lista_espera le USING (id_solicitud)
 LEFT JOIN LATERAL (
     SELECT e.*
     FROM priorizacion.estimacion_espera e
-    WHERE e.id_solicitud = vp.id_solicitud AND e.publicable
+    WHERE e.id_solicitud = vp.id_solicitud AND e.publicable AND e.fecha_calculo <= priorizacion.fecha_corte()
     ORDER BY e.fecha_calculo DESC
     LIMIT 1
 ) ee ON true
-WHERE vp.id_paciente = canal.paciente_verificado('reforzada');
-COMMENT ON VIEW canal.v_ia_estado_solicitud IS 'Prioridad vigente, posición y rango estimado del paciente verificado';
+WHERE vp.id_paciente = canal.paciente_verificado('reforzada')
+  AND vp.fecha_ingreso_lista <= priorizacion.fecha_corte();
+COMMENT ON VIEW canal.v_ia_estado_solicitud IS
+    'Prioridad vigente, posición y rango estimado del paciente verificado, a la fecha de corte';
 
+-- Una cita de raw.citaciones posterior a la fecha de corte se informa como próxima y 'programada':
+-- su resultado (asistió, no asistió…) todavía no se conoce a esa fecha.
 CREATE OR REPLACE VIEW canal.v_ia_citas WITH (security_barrier = true) AS
 SELECT 'agenda'::text                     AS origen,
        ca.id_cita_agendada::text          AS ref_fuente,
@@ -320,17 +328,18 @@ SELECT 'agenda'::text                     AS origen,
        ca.fecha,
        ca.hora_inicio,
        ca.estado,
-       CASE WHEN ca.fecha >= current_date AND ca.estado IN ('programada', 'confirmada')
+       CASE WHEN ca.fecha >= priorizacion.fecha_corte() AND ca.estado IN ('programada', 'confirmada')
             THEN 'proxima' ELSE 'pasada' END AS temporalidad
 FROM priorizacion.cita_agendada ca
 JOIN raw.lista_espera le USING (id_solicitud)
 WHERE le.id_paciente = canal.paciente_verificado('basica')
 UNION ALL
 SELECT 'historico', c.id_cita, c.id_paciente, c.especialidad, c.id_box, c.fecha_cita, NULL::time,
-       c.estado_cita, 'pasada'
+       CASE WHEN c.fecha_cita > priorizacion.fecha_corte() THEN 'programada' ELSE c.estado_cita END,
+       CASE WHEN c.fecha_cita > priorizacion.fecha_corte() THEN 'proxima' ELSE 'pasada' END
 FROM raw.citaciones c
 WHERE c.id_paciente = canal.paciente_verificado('basica');
-COMMENT ON VIEW canal.v_ia_citas IS 'Citas próximas (agenda) y pasadas (agenda e histórico) del paciente verificado';
+COMMENT ON VIEW canal.v_ia_citas IS 'Citas próximas y pasadas del paciente verificado, a la fecha de corte';
 
 -- "sensible" = el asistente no lo lee en voz alta: ofrece derivar a una persona
 CREATE OR REPLACE VIEW canal.v_ia_registros WITH (security_barrier = true) AS
@@ -338,16 +347,18 @@ SELECT 'evento'::text AS tipo_registro, e.id_evento AS ref_fuente, e.id_paciente
        e.tipo_evento AS categoria, e.subtipo AS descripcion, NULL::numeric AS valor, NULL::text AS unidad,
        (e.tipo_evento = 'hospitalizacion' OR e.severidad = 'grave') AS sensible
 FROM raw.eventos_clinicos e
-WHERE e.id_paciente = canal.paciente_verificado('reforzada')
+WHERE e.id_paciente = canal.paciente_verificado('reforzada') AND e.fecha_evento <= priorizacion.fecha_corte()
 UNION ALL
 SELECT 'medicion', m.id_paciente || '/' || m.fecha_medicion || '/' || m.tipo_medicion, m.id_paciente,
        m.fecha_medicion, m.tipo_medicion, m.tipo_medicion, m.valor, m.unidad,
        (m.tipo_medicion = 'PHQ9')
 FROM raw.mediciones m
-WHERE m.id_paciente = canal.paciente_verificado('reforzada')
+WHERE m.id_paciente = canal.paciente_verificado('reforzada') AND m.fecha_medicion <= priorizacion.fecha_corte()
 UNION ALL
 SELECT 'examen_externo', x.id_evidencia::text, x.id_paciente, x.fecha_examen, x.tipo_medicion,
        x.tipo_medicion || coalesce(' (' || nullif(x.lugar, '') || ')', ''), x.valor, NULL, (x.tipo_medicion = 'PHQ9')
 FROM canal.evidencia_externa x
-WHERE x.estado = 'validada' AND x.id_paciente = canal.paciente_verificado('reforzada');
-COMMENT ON VIEW canal.v_ia_registros IS 'Registros clínicos del paciente verificado. Informar qué hay, nunca interpretarlo';
+WHERE x.estado = 'validada' AND x.id_paciente = canal.paciente_verificado('reforzada')
+  AND x.fecha_recepcion <= priorizacion.fecha_corte();
+COMMENT ON VIEW canal.v_ia_registros IS
+    'Registros clínicos del paciente verificado hasta la fecha de corte. Informar qué hay, nunca interpretarlo';

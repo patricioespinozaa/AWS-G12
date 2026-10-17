@@ -46,6 +46,7 @@ Consecuencias para el código:
 | `docs/datasets-externos.md` | Datasets públicos de síntomas, enfermedades y severidad |
 | `docs/glosario.md` | Siglas y términos del sistema de salud chileno |
 | `docs/feature/F0002-modelo-datos-canales.md` | Modelo de datos de los esquemas `priorizacion` y `canal` (WhatsApp y voz con IA): llaves, vistas del asistente, roles y retención |
+| `docs/feature/F0003-flujos-aws-datos.md` | Estructura de datos de los flujos AWS (`docs/diagramas/flujos-aws.pdf`): reloj de la demo, esquema `consulta` (Knowledge Base y preguntas del equipo clínico) y capa S3 + Athena |
 
 Leer `docs/contexto.md` y `docs/datos.md` antes de escribir código que toque datos.
 
@@ -69,7 +70,9 @@ Comandos:
 - Desarrollo: `uvicorn api.main:app --reload --port 8000` + `cd web && npm run dev` (http://localhost:5173)
 - Tests: `python -m pytest` (usa una base temporal)
 - Consolidación nocturna: `python -m priorizacion.nocturno`
-- Base en AWS: `bash db/infra/crear_rds.sh` (crea la instancia RDS si no existe) y `python -m db restaurar` (crea el esquema `raw`, carga los CSV y verifica). Conexión por `HLF_DATABASE_URL` o `HLF_DB_SECRET_ID` + `HLF_DB_HOST`; nunca credenciales en el repo
-- Esquemas de la app y del canal: `python -m db esquema --esquema todos` y `python -m db permisos --esquema todos` (detalle en `docs/feature/F0002-modelo-datos-canales.md`)
+- Base en AWS: `bash db/infra/crear_rds.sh` (crea la instancia RDS si no existe) y `python -m db restaurar` (crea los esquemas `raw`, `priorizacion` y `canal`, carga o sincroniza los CSV en `raw` y verifica todo). Conexión por `HLF_DATABASE_URL` o `HLF_DB_SECRET_ID` + `HLF_DB_HOST`; nunca credenciales en el repo
+- Esquemas: `raw` (F0001), `priorizacion` y `canal` (F0002), `consulta` (F0003). Roles: `python -m db permisos`. Borrar: `python -m db borrar --esquema <raw|priorizacion|canal|consulta|todos> --confirmar` (nunca `DROP SCHEMA raw CASCADE` a mano: elimina en silencio las FKs de los otros esquemas)
+- Reloj de la demo: `python -m db reloj --demo AAAA-MM-DD`, `--avanzar`, `--real`. Las vistas del asistente usan `priorizacion.fecha_corte()`: nunca `current_date` directo
+- S3 + Athena (consultas exactas y agregados): `bash db/infra/crear_s3_athena.sh`, luego `python -m db athena publicar`, `exportar`, `verificar` y `consultar "SELECT …" -p valor`. Requiere `HLF_S3_BUCKET`
 - Tests de la base contra PostgreSQL: `HLF_TEST_DATABASE_URL=postgresql://… python -m pytest tests/test_db.py` (usar una base desechable)
 - EDA: notebooks en `notebooks/`; `notebooks/carga.py` carga el dataset desde `data/dataset_hlf_ambulatorio/dataset_hlf_ambulatorio/`.
