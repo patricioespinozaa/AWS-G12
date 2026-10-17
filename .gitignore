@@ -23,3 +23,6 @@ web/node_modules/
 web/dist/
 web/.vite/
 .pytest_cache/
+
+# Caché de búsquedas de CDK: atada a la cuenta de AWS de quien despliega
+infra/cdk.context.json
